@@ -12,6 +12,54 @@
 			$result  = $( '#aipdf-result' ),
 			$error   = $( '#aipdf-error' );
 
+		// ---------- Вкладки (nav-tab) ----------
+		function activateTab( name ) {
+			if ( ! $( '#aipdf-tab-' + name ).length ) {
+				name = 'playground';
+			}
+
+			$( '#aipdf-tabs .nav-tab' )
+				.removeClass( 'nav-tab-active' )
+				.filter( '[data-tab="' + name + '"]' )
+				.addClass( 'nav-tab-active' );
+
+			$( '.aipdf-tab' ).hide();
+			$( '#aipdf-tab-' + name ).show();
+		}
+
+		$( '#aipdf-tabs' ).on( 'click', '.nav-tab', function ( e ) {
+			e.preventDefault();
+			var name = $( this ).data( 'tab' );
+			activateTab( name );
+			// Хеш в URL — щоб вкладка переживала F5 і редиректи.
+			if ( window.history.replaceState ) {
+				window.history.replaceState( null, '', '#' + name );
+			}
+		} );
+
+		// Початкова вкладка: хеш → після збереження налаштувань → після очищення логу.
+		( function () {
+			var initial = ( window.location.hash || '' ).replace( '#', '' ),
+				search  = window.location.search;
+
+			if ( ! initial && search.indexOf( 'settings-updated=true' ) !== -1 ) {
+				initial = 'settings';
+			}
+			if ( ! initial && search.indexOf( 'aipdf_log_cleared=1' ) !== -1 ) {
+				initial = 'logs';
+			}
+
+			activateTab( initial || 'playground' );
+		}() );
+
+		// ---------- Швидкий старт: готові промпти ----------
+		$( '#aipdf-quickstart' ).on( 'change', function () {
+			var text = $( this ).val();
+			if ( text ) {
+				$prompt.val( text ).trigger( 'focus' );
+			}
+		} );
+
 		// Клік по плейсхолдеру: вставка в textarea на позицію курсора.
 		$( document ).on( 'click', '.aipdf-ph', function () {
 			var tag = $( this ).data( 'ph' ),

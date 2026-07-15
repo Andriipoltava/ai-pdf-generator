@@ -11,9 +11,14 @@ defined( 'ABSPATH' ) || exit;
 class AIPDF_Ajax_Handler {
 
 	/**
-	 * Модель Gemini. За потреби змінюється фільтром `aipdf_gemini_model`.
+	 * Опція з назвою моделі Gemini (налаштовується в адмінці).
 	 */
-	private const GEMINI_MODEL = 'gemini-2.0-flash';
+	public const OPTION_MODEL = 'aipdf_gemini_model';
+
+	/**
+	 * Модель за замовчуванням, якщо опція порожня.
+	 */
+	public const DEFAULT_MODEL = 'gemini-1.5-flash';
 
 	private const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent';
 
@@ -88,7 +93,13 @@ class AIPDF_Ajax_Handler {
 	 * @return string|WP_Error Сирий текст відповіді моделі.
 	 */
 	private function request_gemini( string $api_key, string $user_prompt ) {
-		$model = apply_filters( 'aipdf_gemini_model', self::GEMINI_MODEL );
+		// Модель — з налаштувань (захист від deprecation у Google),
+		// фільтр залишається для програмного перевизначення.
+		$model = (string) get_option( self::OPTION_MODEL, self::DEFAULT_MODEL );
+		if ( '' === trim( $model ) ) {
+			$model = self::DEFAULT_MODEL;
+		}
+		$model = apply_filters( 'aipdf_gemini_model', $model );
 		$url   = sprintf( self::GEMINI_ENDPOINT, rawurlencode( $model ) );
 
 		$body = array(

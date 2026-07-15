@@ -128,9 +128,8 @@ final class AIPDF_Plugin {
 		}
 
 		printf(
-			'<div class="notice notice-warning"><p><strong>AI PDF Generator:</strong> %s <code>composer install</code> %s</p></div>',
-			esc_html__( 'бібліотека mPDF не знайдена. Виконайте', 'ai-pdf-generator' ),
-			esc_html__( 'у папці плагіна — генерація шаблонів працюватиме й без неї, але PDF-файли створюватися не будуть.', 'ai-pdf-generator' )
+			'<div class="notice notice-error"><p><strong>AI PDF Generator:</strong> %s</p></div>',
+			esc_html__( 'Помилка: Не знайдено ядро плагіна (mPDF). Будь ласка, переконайтеся, що ви встановили плагін із готового release-архіву. Генерація шаблонів та налаштування працюють, але PDF-файли не створюватимуться.', 'ai-pdf-generator' )
 		);
 	}
 }

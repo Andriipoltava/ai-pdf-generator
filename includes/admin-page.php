@@ -134,6 +134,16 @@ class AIPDF_Admin_Page {
 
 		register_setting(
 			'aipdf_settings_group',
+			AIPDF_Ajax_Handler::OPTION_MODEL,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( $this, 'sanitize_model' ),
+				'default'           => AIPDF_Ajax_Handler::DEFAULT_MODEL,
+			)
+		);
+
+		register_setting(
+			'aipdf_settings_group',
 			AIPDF_Cron_Cleanup::OPTION_RETENTION,
 			array(
 				'type'              => 'integer',
@@ -141,6 +151,20 @@ class AIPDF_Admin_Page {
 				'default'           => AIPDF_Cron_Cleanup::DEFAULT_RETENTION_DAYS,
 			)
 		);
+	}
+
+	/**
+	 * Назва моделі: лише латиниця, цифри, крапки й дефіси.
+	 * Некоректне значення → модель за замовчуванням.
+	 */
+	public function sanitize_model( $value ): string {
+		$value = strtolower( trim( (string) $value ) );
+
+		if ( '' === $value || ! preg_match( '/^[a-z0-9.\-]{3,60}$/', $value ) ) {
+			return AIPDF_Ajax_Handler::DEFAULT_MODEL;
+		}
+
+		return $value;
 	}
 
 	/**
@@ -210,134 +234,181 @@ class AIPDF_Admin_Page {
 		}
 
 		$api_key = (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
+
+		// Смарт-плейсхолдери: показуємо групи лише для активних плагінів.
+		$placeholder_groups = array(
+			__( 'Базові (завжди)', 'ai-pdf-generator' ) => array( '{{client_name}}', '{{email}}', '{{date}}', '{{qr_code}}' ),
+		);
+		if ( class_exists( 'WooCommerce' ) ) {
+			$placeholder_groups[ __( 'WooCommerce', 'ai-pdf-generator' ) ] = array( '{{order_id}}', '{{order_total}}' );
+		}
+		if ( defined( 'AMELIA_VERSION' ) || class_exists( '\AmeliaBooking\Plugin' ) ) {
+			$placeholder_groups[ __( 'Amelia / бронювання', 'ai-pdf-generator' ) ] = array( '{{ticket_id}}', '{{booking_date}}', '{{service_name}}' );
+		}
+
+		// Заготовлені промпти для «Швидкого старту».
+		$quickstart_prompts = array(
+			__( 'Інвойс A4 для WooCommerce', 'ai-pdf-generator' )   => __( 'Створи стандартний інвойс A4 для WooCommerce. Зверху логотип, нижче таблиця з даними: номер замовлення {{order_id}}, клієнт {{client_name}}, сума {{order_total}}, дата {{date}}.', 'ai-pdf-generator' ),
+			__( 'Квиток 800x400 для Amelia', 'ai-pdf-generator' )   => __( 'Створи індивідуальний квиток 800x400 px для Amelia. Додай іконку календаря, дату бронювання {{booking_date}}, назву послуги {{service_name}} та великий QR-код {{qr_code}}.', 'ai-pdf-generator' ),
+			__( 'Лист-подяка після форми (Letter)', 'ai-pdf-generator' ) => __( 'Створи лист-подяку після заповнення форми у форматі Letter. Текст по центру, звернення до {{client_name}}, дата {{date}}.', 'ai-pdf-generator' ),
+		);
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'AI PDF Generator', 'ai-pdf-generator' ); ?></h1>
 
-			<h2><?php esc_html_e( 'Налаштування', 'ai-pdf-generator' ); ?></h2>
-			<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
-				<?php settings_fields( 'aipdf_settings_group' ); ?>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row">
-							<label for="aipdf-api-key"><?php esc_html_e( 'Gemini API Key', 'ai-pdf-generator' ); ?></label>
-						</th>
-						<td>
-							<input
-								type="password"
-								id="aipdf-api-key"
-								name="<?php echo esc_attr( AIPDF_Plugin::OPTION_API_KEY ); ?>"
-								value=""
-								class="regular-text"
-								autocomplete="new-password"
-								placeholder="<?php echo $api_key ? esc_attr__( '•••••••• (ключ збережено, введіть новий, щоб замінити)', 'ai-pdf-generator' ) : esc_attr__( 'Вставте ключ Gemini API', 'ai-pdf-generator' ); ?>"
-							/>
-							<p class="description">
-								<?php esc_html_e( 'Ключ зберігається в опціях сайту й ніколи не виводиться назад у HTML. Безпечніший варіант: додайте define( \'AIPDF_GEMINI_API_KEY\', \'…\' ) у wp-config.php — константа має пріоритет.', 'ai-pdf-generator' ); ?>
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">
-							<label for="aipdf-retention-days"><?php esc_html_e( 'Час зберігання PDF (днів)', 'ai-pdf-generator' ); ?></label>
-						</th>
-						<td>
-							<input
-								type="number"
-								id="aipdf-retention-days"
-								name="<?php echo esc_attr( AIPDF_Cron_Cleanup::OPTION_RETENTION ); ?>"
-								value="<?php echo esc_attr( (string) absint( get_option( AIPDF_Cron_Cleanup::OPTION_RETENTION, AIPDF_Cron_Cleanup::DEFAULT_RETENTION_DAYS ) ) ); ?>"
-								min="1"
-								max="365"
-								step="1"
-								class="small-text"
-							/>
-							<p class="description">
-								<?php esc_html_e( 'Згенеровані PDF-файли, старіші за вказану кількість днів, щодня видаляються автоматично (WP Cron).', 'ai-pdf-generator' ); ?>
-							</p>
-						</td>
-					</tr>
-				</table>
-				<?php submit_button( __( 'Зберегти налаштування', 'ai-pdf-generator' ) ); ?>
-			</form>
-
-			<hr />
-
-			<h2><?php esc_html_e( 'Playground', 'ai-pdf-generator' ); ?></h2>
-			<p><?php esc_html_e( 'Опишіть документ, який потрібно згенерувати. Наприклад: «Створи квиток для Amelia 800x400 з QR-кодом та логотипом».', 'ai-pdf-generator' ); ?></p>
-
-			<div class="aipdf-placeholders" style="margin:0 0 10px 0;padding:12px 16px;background:#f6f7f7;border:1px solid #ccd0d4;border-radius:4px;max-width:800px;">
-				<strong style="display:block;margin-bottom:8px;"><?php esc_html_e( 'Доступні змінні (Плейсхолдери) — клікніть, щоб вставити у запит:', 'ai-pdf-generator' ); ?></strong>
-				<?php
-				// Групи плейсхолдерів: label => tags.
-				$placeholder_groups = array(
-					__( 'Базові (завжди)', 'ai-pdf-generator' )      => array( '{{client_name}}', '{{email}}', '{{date}}', '{{qr_code}}' ),
-					__( 'WooCommerce', 'ai-pdf-generator' )          => array( '{{order_id}}', '{{order_total}}' ),
-					__( 'Amelia / бронювання', 'ai-pdf-generator' )  => array( '{{ticket_id}}', '{{booking_date}}', '{{service_name}}' ),
-				);
-				foreach ( $placeholder_groups as $group_label => $tags ) :
-					?>
-					<p style="margin:4px 0;">
-						<span style="display:inline-block;min-width:160px;color:#646970;font-size:12px;"><?php echo esc_html( $group_label ); ?>:</span>
-						<?php foreach ( $tags as $tag ) : ?>
-							<code
-								class="aipdf-ph"
-								data-ph="<?php echo esc_attr( $tag ); ?>"
-								title="<?php esc_attr_e( 'Клікніть, щоб вставити в запит', 'ai-pdf-generator' ); ?>"
-								style="cursor:pointer;margin:2px 4px 2px 0;padding:3px 8px;display:inline-block;border-radius:3px;"
-							><?php echo esc_html( $tag ); ?></code>
-						<?php endforeach; ?>
-					</p>
-				<?php endforeach; ?>
-			</div>
-
-			<textarea id="aipdf-prompt" rows="5" class="large-text" placeholder="<?php esc_attr_e( 'Ваш запит…', 'ai-pdf-generator' ); ?>"></textarea>
-			<p>
-				<button type="button" class="button button-primary" id="aipdf-generate-btn">
-					<?php esc_html_e( 'Згенерувати', 'ai-pdf-generator' ); ?>
-				</button>
-				<span class="spinner" id="aipdf-spinner" style="float:none;"></span>
-			</p>
-
-			<div id="aipdf-result" style="display:none;">
-				<h3><?php esc_html_e( 'Результат', 'ai-pdf-generator' ); ?></h3>
-				<table class="widefat striped" style="max-width:700px;">
-					<tbody>
-						<tr><td><strong><?php esc_html_e( 'Шаблон', 'ai-pdf-generator' ); ?></strong></td><td id="aipdf-res-link"></td></tr>
-						<tr><td><strong>trigger_plugin</strong></td><td id="aipdf-res-trigger"></td></tr>
-						<tr><td><strong>action_type</strong></td><td id="aipdf-res-action"></td></tr>
-						<tr><td><strong>paper_size</strong></td><td id="aipdf-res-paper"></td></tr>
-					</tbody>
-				</table>
-				<p>
-					<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank">
-						<?php esc_html_e( 'Завантажити тестовий PDF', 'ai-pdf-generator' ); ?>
-					</a>
-				</p>
-				<h4><?php esc_html_e( 'Попередній перегляд HTML', 'ai-pdf-generator' ); ?></h4>
-				<iframe id="aipdf-preview" style="width:100%;max-width:820px;height:450px;border:1px solid #ccd0d4;background:#fff;" sandbox=""></iframe>
-			</div>
-
-			<div id="aipdf-error" class="notice notice-error" style="display:none;"><p></p></div>
-
-			<hr />
-
-			<h2><?php esc_html_e( 'Журнал подій (Logs)', 'ai-pdf-generator' ); ?></h2>
-			<?php $log_lines = AIPDF_Logger::get_instance()->tail( 50 ); ?>
 			<?php if ( isset( $_GET['aipdf_log_cleared'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- лише інформаційний notice. ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Лог очищено.', 'ai-pdf-generator' ); ?></p></div>
 			<?php endif; ?>
-			<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;max-height:400px;overflow:auto;font-size:12px;line-height:1.6;border-radius:4px;"><?php
-				echo $log_lines
-					? esc_html( implode( "\n", $log_lines ) )
-					: esc_html__( 'Лог порожній.', 'ai-pdf-generator' );
-			?></pre>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
-				onsubmit="return confirm( '<?php echo esc_js( __( 'Очистити журнал подій?', 'ai-pdf-generator' ) ); ?>' );">
-				<input type="hidden" name="action" value="aipdf_clear_log" />
-				<?php wp_nonce_field( 'aipdf_clear_log' ); ?>
-				<?php submit_button( __( 'Очистити лог', 'ai-pdf-generator' ), 'delete', 'submit', false ); ?>
-			</form>
+
+			<h2 class="nav-tab-wrapper" id="aipdf-tabs">
+				<a href="#playground" class="nav-tab nav-tab-active" data-tab="playground"><?php esc_html_e( 'Генератор (Playground)', 'ai-pdf-generator' ); ?></a>
+				<a href="#settings" class="nav-tab" data-tab="settings"><?php esc_html_e( 'Налаштування', 'ai-pdf-generator' ); ?></a>
+				<a href="#logs" class="nav-tab" data-tab="logs"><?php esc_html_e( 'Журнал подій', 'ai-pdf-generator' ); ?></a>
+			</h2>
+
+			<!-- ============ Вкладка 1: Генератор ============ -->
+			<div id="aipdf-tab-playground" class="aipdf-tab" style="padding-top:16px;">
+				<p><?php esc_html_e( 'Опишіть документ, який потрібно згенерувати, або почніть із готового прикладу.', 'ai-pdf-generator' ); ?></p>
+
+				<p>
+					<label for="aipdf-quickstart"><strong><?php esc_html_e( 'Швидкий старт:', 'ai-pdf-generator' ); ?></strong></label><br />
+					<select id="aipdf-quickstart" style="max-width:600px;width:100%;margin-top:4px;">
+						<option value=""><?php esc_html_e( '-- Виберіть готовий приклад --', 'ai-pdf-generator' ); ?></option>
+						<?php foreach ( $quickstart_prompts as $label => $prompt_text ) : ?>
+							<option value="<?php echo esc_attr( $prompt_text ); ?>"><?php echo esc_html( $label ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</p>
+
+				<div class="aipdf-placeholders" style="margin:0 0 10px 0;padding:12px 16px;background:#f6f7f7;border:1px solid #ccd0d4;border-radius:4px;max-width:800px;">
+					<strong style="display:block;margin-bottom:8px;"><?php esc_html_e( 'Доступні змінні (Плейсхолдери) — клікніть, щоб вставити у запит:', 'ai-pdf-generator' ); ?></strong>
+					<?php foreach ( $placeholder_groups as $group_label => $tags ) : ?>
+						<p style="margin:4px 0;">
+							<span style="display:inline-block;min-width:160px;color:#646970;font-size:12px;"><?php echo esc_html( $group_label ); ?>:</span>
+							<?php foreach ( $tags as $tag ) : ?>
+								<code
+									class="aipdf-ph"
+									data-ph="<?php echo esc_attr( $tag ); ?>"
+									title="<?php esc_attr_e( 'Клікніть, щоб вставити в запит', 'ai-pdf-generator' ); ?>"
+									style="cursor:pointer;margin:2px 4px 2px 0;padding:3px 8px;display:inline-block;border-radius:3px;"
+								><?php echo esc_html( $tag ); ?></code>
+							<?php endforeach; ?>
+						</p>
+					<?php endforeach; ?>
+				</div>
+
+				<textarea id="aipdf-prompt" rows="5" class="large-text" placeholder="<?php esc_attr_e( 'Ваш запит…', 'ai-pdf-generator' ); ?>"></textarea>
+				<p>
+					<button type="button" class="button button-primary" id="aipdf-generate-btn">
+						<?php esc_html_e( 'Згенерувати', 'ai-pdf-generator' ); ?>
+					</button>
+					<span class="spinner" id="aipdf-spinner" style="float:none;"></span>
+				</p>
+
+				<div id="aipdf-result" style="display:none;">
+					<h3><?php esc_html_e( 'Результат', 'ai-pdf-generator' ); ?></h3>
+					<table class="widefat striped" style="max-width:700px;">
+						<tbody>
+							<tr><td><strong><?php esc_html_e( 'Шаблон', 'ai-pdf-generator' ); ?></strong></td><td id="aipdf-res-link"></td></tr>
+							<tr><td><strong>trigger_plugin</strong></td><td id="aipdf-res-trigger"></td></tr>
+							<tr><td><strong>action_type</strong></td><td id="aipdf-res-action"></td></tr>
+							<tr><td><strong>paper_size</strong></td><td id="aipdf-res-paper"></td></tr>
+						</tbody>
+					</table>
+					<p>
+						<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank">
+							<?php esc_html_e( 'Завантажити тестовий PDF', 'ai-pdf-generator' ); ?>
+						</a>
+					</p>
+					<h4><?php esc_html_e( 'Попередній перегляд HTML', 'ai-pdf-generator' ); ?></h4>
+					<iframe id="aipdf-preview" style="width:100%;max-width:820px;height:450px;border:1px solid #ccd0d4;background:#fff;" sandbox=""></iframe>
+				</div>
+
+				<div id="aipdf-error" class="notice notice-error" style="display:none;"><p></p></div>
+			</div>
+
+			<!-- ============ Вкладка 2: Налаштування ============ -->
+			<div id="aipdf-tab-settings" class="aipdf-tab" style="display:none;padding-top:16px;">
+				<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
+					<?php settings_fields( 'aipdf_settings_group' ); ?>
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row">
+								<label for="aipdf-api-key"><?php esc_html_e( 'Gemini API Key', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<input
+									type="password"
+									id="aipdf-api-key"
+									name="<?php echo esc_attr( AIPDF_Plugin::OPTION_API_KEY ); ?>"
+									value=""
+									class="regular-text"
+									autocomplete="new-password"
+									placeholder="<?php echo $api_key ? esc_attr__( '•••••••• (ключ збережено, введіть новий, щоб замінити)', 'ai-pdf-generator' ) : esc_attr__( 'Вставте ключ Gemini API', 'ai-pdf-generator' ); ?>"
+								/>
+								<p class="description">
+									<?php esc_html_e( 'Ключ зберігається в опціях сайту й ніколи не виводиться назад у HTML. Безпечніший варіант: додайте define( \'AIPDF_GEMINI_API_KEY\', \'…\' ) у wp-config.php — константа має пріоритет.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="aipdf-model"><?php esc_html_e( 'Модель Gemini (Gemini Model)', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<input
+									type="text"
+									id="aipdf-model"
+									name="<?php echo esc_attr( AIPDF_Ajax_Handler::OPTION_MODEL ); ?>"
+									value="<?php echo esc_attr( (string) get_option( AIPDF_Ajax_Handler::OPTION_MODEL, AIPDF_Ajax_Handler::DEFAULT_MODEL ) ); ?>"
+									class="regular-text"
+									placeholder="<?php echo esc_attr( AIPDF_Ajax_Handler::DEFAULT_MODEL ); ?>"
+								/>
+								<p class="description">
+									<?php esc_html_e( 'Технічна назва моделі з Google AI Studio (наприклад: gemini-1.5-flash, gemini-1.5-pro). Якщо Google виведе модель з експлуатації (помилка 404) — просто впишіть тут актуальну.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="aipdf-retention-days"><?php esc_html_e( 'Час зберігання PDF (днів)', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<input
+									type="number"
+									id="aipdf-retention-days"
+									name="<?php echo esc_attr( AIPDF_Cron_Cleanup::OPTION_RETENTION ); ?>"
+									value="<?php echo esc_attr( (string) absint( get_option( AIPDF_Cron_Cleanup::OPTION_RETENTION, AIPDF_Cron_Cleanup::DEFAULT_RETENTION_DAYS ) ) ); ?>"
+									min="1"
+									max="365"
+									step="1"
+									class="small-text"
+								/>
+								<p class="description">
+									<?php esc_html_e( 'Згенеровані PDF-файли, старіші за вказану кількість днів, щодня видаляються автоматично (WP Cron).', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+					</table>
+					<?php submit_button( __( 'Зберегти налаштування', 'ai-pdf-generator' ) ); ?>
+				</form>
+			</div>
+
+			<!-- ============ Вкладка 3: Журнал подій ============ -->
+			<div id="aipdf-tab-logs" class="aipdf-tab" style="display:none;padding-top:16px;">
+				<?php $log_lines = AIPDF_Logger::get_instance()->tail( 50 ); ?>
+				<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;max-height:400px;overflow:auto;font-size:12px;line-height:1.6;border-radius:4px;"><?php
+					echo $log_lines
+						? esc_html( implode( "\n", $log_lines ) )
+						: esc_html__( 'Лог порожній.', 'ai-pdf-generator' );
+				?></pre>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
+					onsubmit="return confirm( '<?php echo esc_js( __( 'Очистити журнал подій?', 'ai-pdf-generator' ) ); ?>' );">
+					<input type="hidden" name="action" value="aipdf_clear_log" />
+					<?php wp_nonce_field( 'aipdf_clear_log' ); ?>
+					<?php submit_button( __( 'Очистити лог', 'ai-pdf-generator' ), 'delete', 'submit', false ); ?>
+				</form>
+			</div>
 		</div>
 		<?php
 	}
@@ -361,7 +432,7 @@ class AIPDF_Admin_Page {
 					'aipdf_log_cleared' => '1',
 				),
 				admin_url( 'admin.php' )
-			)
+			) . '#logs' // Повертаємось одразу на вкладку журналу.
 		);
 		exit;
 	}
