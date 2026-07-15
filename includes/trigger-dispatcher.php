@@ -26,16 +26,16 @@ class AIPDF_Trigger_Dispatcher {
 		$this->renderer = new AIPDF_PDF_Renderer();
 
 		// --- Хуки сторонніх плагінів реєструємо ЛИШЕ якщо плагін активний. ---
-		if ( AIPDF_Triggers::is_available( 'wc_order_paid' ) ) {
+		if ( AIPDF_Triggers::is_available( 'woocommerce_payment_complete' ) ) {
 			add_action( 'woocommerce_payment_complete', array( $this, 'on_wc_order_paid' ), 10, 1 );
 		}
-		if ( AIPDF_Triggers::is_available( 'amelia_booking_done' ) ) {
+		if ( AIPDF_Triggers::is_available( 'amelia_after_booking_added' ) ) {
 			add_action( 'amelia_after_booking_added', array( $this, 'on_amelia_booking' ), 10, 1 );
 		}
-		if ( AIPDF_Triggers::is_available( 'cf7_submit' ) ) {
+		if ( AIPDF_Triggers::is_available( 'wpcf7_mail_sent' ) ) {
 			add_action( 'wpcf7_mail_sent', array( $this, 'on_cf7_submit' ), 10, 1 );
 		}
-		if ( AIPDF_Triggers::is_available( 'elementor_pro_form_submit' ) ) {
+		if ( AIPDF_Triggers::is_available( 'elementor_pro/forms/new_record' ) ) {
 			add_action( 'elementor_pro/forms/new_record', array( $this, 'on_elementor_form' ), 10, 2 );
 		}
 
@@ -49,11 +49,11 @@ class AIPDF_Trigger_Dispatcher {
 	/**
 	 * Головний конвеєр: тригер → шаблон із БД → PDF → доставка.
 	 *
-	 * @param string                $trigger Один із AIPDF_Plugin::ALLOWED_TRIGGERS.
+	 * @param string                $trigger Один із ключів каталогу AIPDF_Triggers.
 	 * @param array<string, string> $data    Дані для плейсхолдерів.
 	 */
 	public function run_trigger( string $trigger, array $data ): void {
-		if ( ! in_array( $trigger, AIPDF_Plugin::ALLOWED_TRIGGERS, true ) ) {
+		if ( ! in_array( $trigger, AIPDF_Triggers::all(), true ) ) {
 			return;
 		}
 
@@ -123,7 +123,7 @@ class AIPDF_Trigger_Dispatcher {
 		}
 
 		$this->run_trigger(
-			'wc_order_paid',
+			'woocommerce_payment_complete',
 			array(
 				'client_name' => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
 				'email'       => $order->get_billing_email(),
@@ -177,7 +177,7 @@ class AIPDF_Trigger_Dispatcher {
 		}
 
 		$this->run_trigger(
-			'elementor_pro_form_submit',
+			'elementor_pro/forms/new_record',
 			array(
 				'client_name' => $name,
 				'email'       => $email,
@@ -209,7 +209,7 @@ class AIPDF_Trigger_Dispatcher {
 		$last  = $customer['lastName'] ?? '';
 
 		$this->run_trigger(
-			'amelia_booking_done',
+			'amelia_after_booking_added',
 			array(
 				'client_name' => trim( $first . ' ' . $last ),
 				'email'       => $customer['email'] ?? '',
@@ -241,7 +241,7 @@ class AIPDF_Trigger_Dispatcher {
 		$posted = $submission->get_posted_data();
 
 		$this->run_trigger(
-			'cf7_submit',
+			'wpcf7_mail_sent',
 			array(
 				'client_name' => sanitize_text_field( (string) ( $posted['your-name'] ?? '' ) ),
 				'email'       => sanitize_email( (string) ( $posted['your-email'] ?? '' ) ),

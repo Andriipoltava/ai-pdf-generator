@@ -217,8 +217,9 @@ class AIPDF_Ajax_Handler {
 		}
 
 		// trigger_plugin та action_type — лише зі списку дозволених.
-		$trigger = sanitize_key( $parsed['trigger_plugin'] );
-		if ( ! in_array( $trigger, AIPDF_Plugin::ALLOWED_TRIGGERS, true ) ) {
+		// AIPDF_Triggers::sanitize зберігає «/» (elementor_pro/forms/new_record).
+		$trigger = AIPDF_Triggers::sanitize( $parsed['trigger_plugin'] );
+		if ( ! in_array( $trigger, AIPDF_Triggers::all(), true ) ) {
 			$trigger = 'manual_generation';
 		}
 
@@ -281,24 +282,29 @@ class AIPDF_Ajax_Handler {
 	 * та вимоги до HTML під PDF-конвертери.
 	 */
 	private function get_system_prompt(): string {
-		// Лише доступні тригери (активні плагіни) — щоб AI не пропонував
-		// подію плагіна, якого немає на сайті.
-		$triggers = implode( ', ', AIPDF_Triggers::available() );
+		// Каталог доступних тригерів із їхніми контекстними плейсхолдерами —
+		// щоб AI обирав лише наявну подію й використовував саме її дані.
+		$lines = array();
+		foreach ( AIPDF_Triggers::available() as $key ) {
+			$ph = implode( ', ', AIPDF_Triggers::placeholders( $key ) );
+			$lines[] = sprintf( '- %s — %s. Placeholders: %s', $key, AIPDF_Triggers::label( $key ), $ph );
+		}
+		$trigger_block = implode( "\n", $lines );
+		$trigger_keys  = implode( ', ', AIPDF_Triggers::available() );
 
 		return <<<PROMPT
 You are a Senior WordPress Developer and an AI assistant for a PDF generation plugin.
 Analyze the user's request, understand WHERE and WHEN they want to generate a PDF, and create the HTML template.
 
-TRIGGER RULES (trigger_plugin) — pick exactly one of: {$triggers}.
-- wc_order_paid: WooCommerce order paid, receipt, invoice, product purchase.
-- cf7_submit, wpforms_submit, gform_submit, ninja_forms_submit, formidable_submit, elementor_pro_form_submit, fluentform_submit, forminator_submit, wsform_submit, everest_forms_submit: submissions of the corresponding form plugins.
-- amelia_booking_done, tec_event_booking, event_tickets_purchase, bookly_booking_done, event_espresso_registration, mec_booking_done, wc_bookings_done: bookings/events of the corresponding plugins.
-- manual_generation: manual generation from admin, or when the system is not specified.
+TRIGGER RULES (trigger_plugin) — pick EXACTLY ONE key from this list of AVAILABLE triggers (each shows the placeholders you may use for that context):
+{$trigger_block}
+
+Return the trigger key verbatim (e.g. "woocommerce_payment_complete"). If nothing fits, use "manual_generation". Allowed keys: {$trigger_keys}.
 
 HTML RULES (html_template):
 1. Only basic HTML with inline CSS (style="...").
 2. STRICTLY FORBIDDEN: CSS Grid, Flexbox, calc(). Use classic <table> layout or position: absolute.
-3. Use placeholders instead of real data: {{client_name}}, {{email}}, {{date}}, {{qr_code}}, {{order_id}}, {{order_total}}, {{ticket_id}}, {{booking_date}}, {{service_name}}.
+3. Use ONLY placeholders as data — never real values. Prefer the placeholders listed for the chosen trigger above, plus the always-available {{client_name}}, {{email}}, {{date}}, {{qr_code}}.
 4. For graphics use <img> with hard-coded width and height attributes.
 5. Do NOT include <script>, <style> blocks, event handlers, or external CSS.
 6. BRANDING — never hardcode a logo, company name/address/email, or brand color. ALWAYS use these placeholders so the user can change them later without editing HTML:

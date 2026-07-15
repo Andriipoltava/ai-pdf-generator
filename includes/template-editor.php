@@ -211,8 +211,8 @@ class AIPDF_Template_Editor {
 
 		// Параметри генерації.
 		if ( isset( $_POST['aipdf_trigger'] ) ) {
-			$trigger = sanitize_key( wp_unslash( $_POST['aipdf_trigger'] ) );
-			if ( in_array( $trigger, AIPDF_Plugin::ALLOWED_TRIGGERS, true ) ) {
+			$trigger = AIPDF_Triggers::sanitize( wp_unslash( $_POST['aipdf_trigger'] ) );
+			if ( in_array( $trigger, AIPDF_Triggers::all(), true ) ) {
 				update_post_meta( $post_id, '_aipdf_trigger_plugin', $trigger );
 			}
 		}

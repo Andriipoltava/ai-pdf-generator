@@ -50,8 +50,10 @@ class AIPDF_CPT_Register {
 		);
 
 		// Реєструємо meta-поля з sanitize-колбеками.
+		// _aipdf_trigger_plugin: власний санітайзер, бо ключі-хуки містять «/»
+		// (sanitize_meta застосовує цей колбек навіть при update_post_meta).
 		$meta_fields = array(
-			'_aipdf_trigger_plugin' => 'sanitize_key',
+			'_aipdf_trigger_plugin' => array( 'AIPDF_Triggers', 'sanitize' ),
 			'_aipdf_action_type'    => 'sanitize_key',
 			'_aipdf_paper_size'     => 'sanitize_text_field',
 		);
