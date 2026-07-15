@@ -103,6 +103,18 @@ class AIPDF_Admin_Page {
 			'dashicons-pdf',
 			58
 		);
+
+		// Явний перший підпункт з тим самим slug, що й батьківське меню.
+		// Без нього CPT «Шаблони» (show_in_menu => ADMIN_SLUG) витісняє
+		// сторінку налаштувань/Playground із підменю повністю.
+		add_submenu_page(
+			AIPDF_Plugin::ADMIN_SLUG,
+			__( 'AI PDF Generator', 'ai-pdf-generator' ),
+			__( 'Генератор і налаштування', 'ai-pdf-generator' ),
+			'manage_options',
+			AIPDF_Plugin::ADMIN_SLUG,
+			array( $this, 'render_page' )
+		);
 	}
 
 	/**
