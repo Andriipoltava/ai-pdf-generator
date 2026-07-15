@@ -26,25 +26,22 @@ class AIPDF_Ajax_Handler {
 	public function __construct() {
 		// Лише для залогінених адмінів — wp_ajax_nopriv не реєструємо свідомо.
 		add_action( 'wp_ajax_aipdf_generate', array( $this, 'handle_generate' ) );
+		add_action( 'wp_ajax_aipdf_refine', array( $this, 'handle_refine' ) );
+		add_action( 'wp_ajax_aipdf_save', array( $this, 'handle_save' ) );
 	}
 
 	/**
-	 * Точка входу AJAX.
+	 * Спільна перевірка доступу + отримання ключа. Завершує запит помилкою,
+	 * якщо щось не так; інакше повертає API-ключ.
 	 */
-	public function handle_generate(): void {
+	private function guard_and_key(): string {
 		check_ajax_referer( 'aipdf_generate', 'nonce' );
 
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_send_json_error( array( 'message' => __( 'Недостатньо прав.', 'ai-pdf-generator' ) ), 403 );
 		}
 
-		$user_prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
-		if ( '' === $user_prompt ) {
-			wp_send_json_error( array( 'message' => __( 'Запит порожній.', 'ai-pdf-generator' ) ), 400 );
-		}
-
-		// Константа з wp-config.php має пріоритет над опцією в БД:
-		// define( 'AIPDF_GEMINI_API_KEY', '…' ); — ключ не потрапляє в БД/бекапи.
+		// Константа з wp-config.php має пріоритет над опцією в БД.
 		$api_key = defined( 'AIPDF_GEMINI_API_KEY' )
 			? (string) AIPDF_GEMINI_API_KEY
 			: (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
@@ -52,10 +49,132 @@ class AIPDF_Ajax_Handler {
 			wp_send_json_error( array( 'message' => __( 'Спершу збережіть Gemini API Key у налаштуваннях.', 'ai-pdf-generator' ) ), 400 );
 		}
 
-		$ai_response = $this->request_gemini( $api_key, $user_prompt );
+		return $api_key;
+	}
+
+	/**
+	 * КРОК 1 — Генерація ЧЕРНЕТКИ. Пост НЕ створюється: повертаємо превю
+	 * і дані, які клієнт тримає до збереження.
+	 */
+	public function handle_generate(): void {
+		$api_key = $this->guard_and_key();
+
+		$user_prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
+		if ( '' === $user_prompt ) {
+			wp_send_json_error( array( 'message' => __( 'Запит порожній.', 'ai-pdf-generator' ) ), 400 );
+		}
+
+		$template = $this->ask_gemini(
+			$api_key,
+			array( array( 'role' => 'user', 'text' => $user_prompt ) )
+		);
+		if ( is_wp_error( $template ) ) {
+			wp_send_json_error( array( 'message' => $template->get_error_message() ), 502 );
+		}
+
+		wp_send_json_success( $this->draft_payload( $template, $user_prompt ) );
+	}
+
+	/**
+	 * КРОК 2 — УТОЧНЕННЯ чернетки. Клієнт надсилає поточний каркас, поля,
+	 * інструкцію та (опційно) історію. Пост НЕ створюється.
+	 */
+	public function handle_refine(): void {
+		$api_key = $this->guard_and_key();
+
+		$instruction = isset( $_POST['instruction'] ) ? sanitize_textarea_field( wp_unslash( $_POST['instruction'] ) ) : '';
+		if ( '' === $instruction ) {
+			wp_send_json_error( array( 'message' => __( 'Опишіть, що змінити.', 'ai-pdf-generator' ) ), 400 );
+		}
+
+		$current_html   = isset( $_POST['html_template'] ) ? wp_kses_post( wp_unslash( $_POST['html_template'] ) ) : '';
+		$current_fields = isset( $_POST['editable_fields'] ) ? json_decode( wp_unslash( $_POST['editable_fields'] ), true ) : array();
+		$current_fields = AIPDF_Fields::normalize( is_array( $current_fields ) ? $current_fields : array() );
+		$base_prompt    = isset( $_POST['base_prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['base_prompt'] ) ) : '';
+
+		// Поточний стан чернетки як JSON — контекст для моделі.
+		$current_json = wp_json_encode(
+			array(
+				'html_template'   => $current_html,
+				'editable_fields' => $current_fields,
+			),
+			JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+		);
+
+		// Багатоходова розмова: початковий запит → поточний макет → уточнення.
+		$contents = array();
+		if ( '' !== $base_prompt ) {
+			$contents[] = array( 'role' => 'user', 'text' => $base_prompt );
+		}
+		$contents[] = array( 'role' => 'model', 'text' => (string) $current_json );
+		$contents[] = array(
+			'role' => 'user',
+			'text' => "This is the CURRENT template. Apply ONLY this change and return the full updated JSON (same schema, keep everything else intact):\n\n" . $instruction,
+		);
+
+		$template = $this->ask_gemini( $api_key, $contents );
+		if ( is_wp_error( $template ) ) {
+			wp_send_json_error( array( 'message' => $template->get_error_message() ), 502 );
+		}
+
+		wp_send_json_success( $this->draft_payload( $template, $base_prompt ) );
+	}
+
+	/**
+	 * КРОК 3 — ЗБЕРЕЖЕННЯ фіналізованої чернетки як CPT.
+	 */
+	public function handle_save(): void {
+		check_ajax_referer( 'aipdf_generate', 'nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Недостатньо прав.', 'ai-pdf-generator' ) ), 403 );
+		}
+
+		// Дані чернетки з клієнта — повторно валідуємо/санітизуємо як від AI.
+		$raw = array(
+			'trigger_plugin'  => isset( $_POST['trigger_plugin'] ) ? wp_unslash( $_POST['trigger_plugin'] ) : '',
+			'action_type'     => isset( $_POST['action_type'] ) ? wp_unslash( $_POST['action_type'] ) : '',
+			'paper_size'      => isset( $_POST['paper_size'] ) ? wp_unslash( $_POST['paper_size'] ) : '',
+			'html_template'   => isset( $_POST['html_template'] ) ? wp_unslash( $_POST['html_template'] ) : '',
+			'editable_fields' => isset( $_POST['editable_fields'] ) ? json_decode( wp_unslash( $_POST['editable_fields'] ), true ) : array(),
+		);
+
+		$template = $this->normalize_template( $raw );
+		if ( is_wp_error( $template ) ) {
+			wp_send_json_error( array( 'message' => $template->get_error_message() ), 422 );
+		}
+
+		$user_prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
+		if ( '' === $user_prompt ) {
+			$user_prompt = __( 'Шаблон PDF', 'ai-pdf-generator' );
+		}
+
+		$post_id = $this->save_template( $user_prompt, $template );
+		if ( is_wp_error( $post_id ) ) {
+			wp_send_json_error( array( 'message' => $post_id->get_error_message() ), 500 );
+		}
+
+		wp_send_json_success(
+			array(
+				'post_id'       => $post_id,
+				'edit_link'     => get_edit_post_link( $post_id, 'raw' ),
+				'test_pdf_url'  => AIPDF_Admin_Page::get_test_pdf_url( $post_id ),
+				'pdf_available' => AIPDF_PDF_Renderer::is_available(),
+			)
+		);
+	}
+
+	/**
+	 * Виклик Gemini + парсинг/валідація. Повертає нормалізований шаблон
+	 * або WP_Error (з логуванням).
+	 *
+	 * @param array<int, array{role:string,text:string}> $contents
+	 * @return array|WP_Error
+	 */
+	private function ask_gemini( string $api_key, array $contents ) {
+		$ai_response = $this->request_gemini( $api_key, $contents );
 		if ( is_wp_error( $ai_response ) ) {
 			AIPDF_Logger::get_instance()->error( 'Gemini API: ' . $ai_response->get_error_message() );
-			wp_send_json_error( array( 'message' => $ai_response->get_error_message() ), 502 );
+			return $ai_response;
 		}
 
 		$template = $this->parse_and_validate( $ai_response );
@@ -68,34 +187,35 @@ class AIPDF_Ajax_Handler {
 					mb_substr( $ai_response, 0, 200 )
 				)
 			);
-			wp_send_json_error( array( 'message' => $template->get_error_message() ), 422 );
 		}
 
-		$post_id = $this->save_template( $user_prompt, $template );
-		if ( is_wp_error( $post_id ) ) {
-			wp_send_json_error( array( 'message' => $post_id->get_error_message() ), 500 );
-		}
+		return $template;
+	}
 
-		wp_send_json_success(
-			array(
-				'post_id'        => $post_id,
-				'edit_link'      => get_edit_post_link( $post_id, 'raw' ),
-				'test_pdf_url'   => AIPDF_Admin_Page::get_test_pdf_url( $post_id ),
-				'pdf_available'  => AIPDF_PDF_Renderer::is_available(),
-				'trigger_plugin'  => $template['trigger_plugin'],
-				'action_type'     => $template['action_type'],
-				'paper_size'      => $template['paper_size'],
-				'html_template'   => $template['html_template'],
-				'editable_fields' => $template['editable_fields'],
-				// Готове превю: каркас + значення полів + демо-дані.
-				'preview_html'    => AIPDF_PDF_Renderer::substitute(
-					$template['html_template'],
-					array_merge(
-						AIPDF_PDF_Renderer::sample_data(),
-						AIPDF_Fields::values( $template['editable_fields'] )
-					)
-				),
-			)
+	/**
+	 * Формує payload чернетки для клієнта (без створення поста).
+	 *
+	 * @param array  $template   Нормалізований шаблон.
+	 * @param string $base_prompt Початковий запит (для title при збереженні).
+	 * @return array<string, mixed>
+	 */
+	private function draft_payload( array $template, string $base_prompt ): array {
+		return array(
+			'draft'           => true,
+			'base_prompt'     => $base_prompt,
+			'trigger_plugin'  => $template['trigger_plugin'],
+			'action_type'     => $template['action_type'],
+			'paper_size'      => $template['paper_size'],
+			'html_template'   => $template['html_template'],
+			'editable_fields' => $template['editable_fields'],
+			// Готове превю: каркас + значення полів + демо-дані.
+			'preview_html'    => AIPDF_PDF_Renderer::substitute(
+				$template['html_template'],
+				array_merge(
+					AIPDF_PDF_Renderer::sample_data(),
+					AIPDF_Fields::values( $template['editable_fields'] )
+				)
+			),
 		);
 	}
 
@@ -105,9 +225,10 @@ class AIPDF_Ajax_Handler {
 	 * Ключ передаємо у заголовку x-goog-api-key (не в URL),
 	 * щоб він не потрапляв у логи проксі/серверів.
 	 *
+	 * @param array<int, array{role:string,text:string}> $contents Ходи розмови.
 	 * @return string|WP_Error Сирий текст відповіді моделі.
 	 */
-	private function request_gemini( string $api_key, string $user_prompt ) {
+	private function request_gemini( string $api_key, array $contents ) {
 		// Модель — з налаштувань (захист від deprecation у Google),
 		// фільтр залишається для програмного перевизначення.
 		$model = (string) get_option( self::OPTION_MODEL, self::DEFAULT_MODEL );
@@ -117,20 +238,21 @@ class AIPDF_Ajax_Handler {
 		$model = apply_filters( 'aipdf_gemini_model', $model );
 		$url   = sprintf( self::GEMINI_ENDPOINT, rawurlencode( $model ) );
 
+		$mapped = array();
+		foreach ( $contents as $turn ) {
+			$mapped[] = array(
+				'role'  => ( 'model' === ( $turn['role'] ?? 'user' ) ) ? 'model' : 'user',
+				'parts' => array( array( 'text' => (string) ( $turn['text'] ?? '' ) ) ),
+			);
+		}
+
 		$body = array(
 			'system_instruction' => array(
 				'parts' => array(
 					array( 'text' => $this->get_system_prompt() ),
 				),
 			),
-			'contents'           => array(
-				array(
-					'role'  => 'user',
-					'parts' => array(
-						array( 'text' => $user_prompt ),
-					),
-				),
-			),
+			'contents'           => $mapped,
 			'generationConfig'   => array(
 				// Просимо модель віддавати строго JSON.
 				'response_mime_type' => 'application/json',
@@ -212,6 +334,17 @@ class AIPDF_Ajax_Handler {
 			return new WP_Error( 'aipdf_bad_json', __( 'Відповідь моделі не є валідним JSON.', 'ai-pdf-generator' ) );
 		}
 
+		return $this->normalize_template( $parsed );
+	}
+
+	/**
+	 * Валідація/санітизація структури шаблону (спільна для відповіді Gemini
+	 * і для чернетки, що приходить від клієнта при збереженні).
+	 *
+	 * @param array<string, mixed> $parsed
+	 * @return array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string,editable_fields:array}|WP_Error
+	 */
+	private function normalize_template( array $parsed ) {
 		foreach ( array( 'trigger_plugin', 'action_type', 'paper_size', 'html_template' ) as $field ) {
 			if ( empty( $parsed[ $field ] ) || ! is_string( $parsed[ $field ] ) ) {
 				return new WP_Error(

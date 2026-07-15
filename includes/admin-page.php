@@ -262,9 +262,11 @@ class AIPDF_Admin_Page {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'aipdf_generate' ),
 				'i18n'    => array(
-					'generating' => __( 'Генерація… (може тривати до 30 сек)', 'ai-pdf-generator' ),
-					'error'      => __( 'Сталася помилка. Спробуйте ще раз.', 'ai-pdf-generator' ),
-					'emptyInput' => __( 'Опишіть, який документ потрібен.', 'ai-pdf-generator' ),
+					'generating'  => __( 'Генерація… (може тривати до 30 сек)', 'ai-pdf-generator' ),
+					'error'       => __( 'Сталася помилка. Спробуйте ще раз.', 'ai-pdf-generator' ),
+					'emptyInput'  => __( 'Опишіть, який документ потрібен.', 'ai-pdf-generator' ),
+					'emptyRefine' => __( 'Опишіть, що змінити.', 'ai-pdf-generator' ),
+					'saved'       => __( 'Шаблон збережено', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -352,22 +354,36 @@ class AIPDF_Admin_Page {
 				</p>
 
 				<div id="aipdf-result" style="display:none;">
-					<h3><?php esc_html_e( 'Результат', 'ai-pdf-generator' ); ?></h3>
+					<h3><?php esc_html_e( 'Чернетка шаблону', 'ai-pdf-generator' ); ?> <span id="aipdf-draft-badge" style="font-size:12px;font-weight:normal;color:#b26900;background:#fcf3e6;padding:2px 8px;border-radius:3px;vertical-align:middle;"><?php esc_html_e( 'не збережено', 'ai-pdf-generator' ); ?></span></h3>
 					<table class="widefat striped" style="max-width:700px;">
 						<tbody>
-							<tr><td><strong><?php esc_html_e( 'Шаблон', 'ai-pdf-generator' ); ?></strong></td><td id="aipdf-res-link"></td></tr>
-							<tr><td><strong>trigger_plugin</strong></td><td id="aipdf-res-trigger"></td></tr>
+							<tr><td style="width:140px;"><strong>trigger_plugin</strong></td><td id="aipdf-res-trigger"></td></tr>
 							<tr><td><strong>action_type</strong></td><td id="aipdf-res-action"></td></tr>
 							<tr><td><strong>paper_size</strong></td><td id="aipdf-res-paper"></td></tr>
 						</tbody>
 					</table>
-					<p>
-						<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank">
-							<?php esc_html_e( 'Завантажити тестовий PDF', 'ai-pdf-generator' ); ?>
-						</a>
-					</p>
-					<h4><?php esc_html_e( 'Попередній перегляд HTML', 'ai-pdf-generator' ); ?></h4>
+
+					<h4><?php esc_html_e( 'Попередній перегляд', 'ai-pdf-generator' ); ?></h4>
 					<iframe id="aipdf-preview" style="width:100%;max-width:820px;height:450px;border:1px solid #ccd0d4;background:#fff;" sandbox=""></iframe>
+
+					<div id="aipdf-refine-wrap" style="margin-top:16px;max-width:820px;">
+						<label for="aipdf-refine"><strong><?php esc_html_e( 'Уточнити (Refine):', 'ai-pdf-generator' ); ?></strong></label>
+						<textarea id="aipdf-refine" rows="2" class="large-text" placeholder="<?php esc_attr_e( 'Напр.: зроби заголовок більшим і синім, додай рамку навколо документа', 'ai-pdf-generator' ); ?>"></textarea>
+						<p>
+							<button type="button" class="button" id="aipdf-refine-btn"><?php esc_html_e( 'Уточнити', 'ai-pdf-generator' ); ?></button>
+							<button type="button" class="button button-primary button-hero" id="aipdf-save-btn" style="margin-left:8px;"><?php esc_html_e( 'Зберегти шаблон', 'ai-pdf-generator' ); ?></button>
+							<span class="spinner" id="aipdf-refine-spinner" style="float:none;"></span>
+						</p>
+						<ul id="aipdf-history" style="margin:8px 0;padding-left:18px;color:#646970;font-size:12px;list-style:disc;"></ul>
+					</div>
+
+					<div id="aipdf-saved" class="notice notice-success" style="display:none;padding:10px 12px;margin-top:12px;">
+						<p id="aipdf-saved-msg" style="margin:0 0 8px;"></p>
+						<p style="margin:0;">
+							<a href="#" id="aipdf-edit-link" class="button"><?php esc_html_e( 'Відкрити в редакторі', 'ai-pdf-generator' ); ?></a>
+							<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank" style="display:none;"><?php esc_html_e( 'Завантажити тестовий PDF', 'ai-pdf-generator' ); ?></a>
+						</p>
+					</div>
 				</div>
 
 				<div id="aipdf-error" class="notice notice-error" style="display:none;"><p></p></div>

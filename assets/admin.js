@@ -128,11 +128,59 @@
 			$error.show();
 		}
 
+		function failHandler( xhr ) {
+			var message = aipdfData.i18n.error;
+			if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+				message = xhr.responseJSON.data.message;
+			}
+			showError( message );
+		}
+
+		// Поточна чернетка (не збережена в БД до кнопки «Зберегти шаблон»).
+		var currentDraft = null;
+
+		var $refine        = $( '#aipdf-refine' ),
+			$refineBtn     = $( '#aipdf-refine-btn' ),
+			$saveBtn       = $( '#aipdf-save-btn' ),
+			$refineSpinner = $( '#aipdf-refine-spinner' ),
+			$saved         = $( '#aipdf-saved' ),
+			$history       = $( '#aipdf-history' );
+
+		function applyDraft( d ) {
+			currentDraft = {
+				html_template:   d.html_template,
+				editable_fields: d.editable_fields || [],
+				trigger_plugin:  d.trigger_plugin,
+				action_type:     d.action_type,
+				paper_size:      d.paper_size,
+				base_prompt:     d.base_prompt || ''
+			};
+			$( '#aipdf-res-trigger' ).text( d.trigger_plugin );
+			$( '#aipdf-res-action' ).text( d.action_type );
+			$( '#aipdf-res-paper' ).text( d.paper_size );
+			$( '#aipdf-preview' ).attr( 'srcdoc', '<base target="_blank">' + ( d.preview_html || d.html_template ) );
+			// Повертаємось у стан «чернетка».
+			$saved.hide();
+			$( '#aipdf-draft-badge' ).show();
+			$result.show();
+		}
+
+		function addHistory( text ) {
+			$( '<li/>', { text: text } ).appendTo( $history );
+		}
+
+		function busy( on ) {
+			$refineBtn.prop( 'disabled', on );
+			$saveBtn.prop( 'disabled', on );
+			$refineSpinner.toggleClass( 'is-active', on );
+		}
+
+		// --- КРОК 1: генерація ЧЕРНЕТКИ (без збереження) ---
 		$btn.on( 'click', function () {
 			var prompt = $.trim( $prompt.val() );
-
 			$error.hide();
 			$result.hide();
+			$history.empty();
 
 			if ( ! prompt ) {
 				showError( aipdfData.i18n.emptyInput );
@@ -152,40 +200,84 @@
 						showError( ( response && response.data && response.data.message ) || aipdfData.i18n.error );
 						return;
 					}
-
-					var d = response.data;
-
-					$( '#aipdf-res-link' ).html(
-						$( '<a/>', { href: d.edit_link, text: '#' + d.post_id } )
-					);
-					$( '#aipdf-res-trigger' ).text( d.trigger_plugin );
-					$( '#aipdf-res-action' ).text( d.action_type );
-					$( '#aipdf-res-paper' ).text( d.paper_size );
-
-					// Кнопка тестового PDF: показуємо лише якщо mPDF встановлено.
-					$( '#aipdf-test-pdf-link' )
-						.attr( 'href', d.test_pdf_url )
-						.toggle( !! d.pdf_available );
-
-					// Превю: сервер уже підставив значення полів + демо-дані
-					// (preview_html). Fallback — сирий каркас.
-					$( '#aipdf-preview' ).attr(
-						'srcdoc',
-						'<base target="_blank">' + ( d.preview_html || d.html_template )
-					);
-
-					$result.show();
+					applyDraft( response.data );
+					addHistory( 'Запит: ' + prompt );
 				} )
-				.fail( function ( xhr ) {
-					var message = aipdfData.i18n.error;
-					if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
-						message = xhr.responseJSON.data.message;
-					}
-					showError( message );
-				} )
+				.fail( failHandler )
 				.always( function () {
 					$btn.prop( 'disabled', false ).text( 'Згенерувати' );
 					$spinner.removeClass( 'is-active' );
+				} );
+		} );
+
+		// --- КРОК 2: УТОЧНЕННЯ чернетки ---
+		$refineBtn.on( 'click', function () {
+			if ( ! currentDraft ) {
+				return;
+			}
+			var instruction = $.trim( $refine.val() );
+			$error.hide();
+			if ( ! instruction ) {
+				showError( aipdfData.i18n.emptyRefine );
+				return;
+			}
+
+			busy( true );
+			$.post( aipdfData.ajaxUrl, {
+				action:          'aipdf_refine',
+				nonce:           aipdfData.nonce,
+				instruction:     instruction,
+				base_prompt:     currentDraft.base_prompt,
+				html_template:   currentDraft.html_template,
+				editable_fields: JSON.stringify( currentDraft.editable_fields )
+			} )
+				.done( function ( response ) {
+					if ( ! response || ! response.success ) {
+						showError( ( response && response.data && response.data.message ) || aipdfData.i18n.error );
+						return;
+					}
+					applyDraft( response.data );
+					addHistory( 'Уточнення: ' + instruction );
+					$refine.val( '' );
+				} )
+				.fail( failHandler )
+				.always( function () {
+					busy( false );
+				} );
+		} );
+
+		// --- КРОК 3: ЗБЕРЕЖЕННЯ чернетки як CPT ---
+		$saveBtn.on( 'click', function () {
+			if ( ! currentDraft ) {
+				return;
+			}
+			$error.hide();
+			busy( true );
+			$.post( aipdfData.ajaxUrl, {
+				action:          'aipdf_save',
+				nonce:           aipdfData.nonce,
+				prompt:          currentDraft.base_prompt,
+				trigger_plugin:  currentDraft.trigger_plugin,
+				action_type:     currentDraft.action_type,
+				paper_size:      currentDraft.paper_size,
+				html_template:   currentDraft.html_template,
+				editable_fields: JSON.stringify( currentDraft.editable_fields )
+			} )
+				.done( function ( response ) {
+					if ( ! response || ! response.success ) {
+						showError( ( response && response.data && response.data.message ) || aipdfData.i18n.error );
+						return;
+					}
+					var d = response.data;
+					$( '#aipdf-saved-msg' ).text( ( aipdfData.i18n.saved || 'Збережено' ) + ' (#' + d.post_id + ').' );
+					$( '#aipdf-edit-link' ).attr( 'href', d.edit_link );
+					$( '#aipdf-test-pdf-link' ).attr( 'href', d.test_pdf_url ).toggle( !! d.pdf_available );
+					$( '#aipdf-draft-badge' ).hide();
+					$saved.show();
+				} )
+				.fail( failHandler )
+				.always( function () {
+					busy( false );
 				} );
 		} );
 	} );
