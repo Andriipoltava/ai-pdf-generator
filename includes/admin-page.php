@@ -24,9 +24,16 @@ class AIPDF_Admin_Page {
 	 * Nonce-захищений URL тестової генерації PDF для шаблону.
 	 */
 	public static function get_test_pdf_url( int $post_id ): string {
-		return wp_nonce_url(
-			admin_url( 'admin-post.php?action=aipdf_test_pdf&post_id=' . $post_id ),
-			'aipdf_test_pdf_' . $post_id
+		// НЕ wp_nonce_url(): вона повертає HTML-екранований URL (&amp;),
+		// який ламається при передачі через JSON у JS (сервер бачить
+		// параметр `amp;post_id` і nonce-перевірка провалюється).
+		return add_query_arg(
+			array(
+				'action'   => 'aipdf_test_pdf',
+				'post_id'  => $post_id,
+				'_wpnonce' => wp_create_nonce( 'aipdf_test_pdf_' . $post_id ),
+			),
+			admin_url( 'admin-post.php' )
 		);
 	}
 

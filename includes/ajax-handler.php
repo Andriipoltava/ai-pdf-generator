@@ -16,9 +16,10 @@ class AIPDF_Ajax_Handler {
 	public const OPTION_MODEL = 'aipdf_gemini_model';
 
 	/**
-	 * Модель за замовчуванням, якщо опція порожня.
+	 * Модель за замовчуванням: аліас, який Google завжди тримає
+	 * на актуальній flash-моделі — не ламається при deprecation.
 	 */
-	public const DEFAULT_MODEL = 'gemini-1.5-flash';
+	public const DEFAULT_MODEL = 'gemini-flash-latest';
 
 	private const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent';
 
@@ -60,7 +61,12 @@ class AIPDF_Ajax_Handler {
 		$template = $this->parse_and_validate( $ai_response );
 		if ( is_wp_error( $template ) ) {
 			AIPDF_Logger::get_instance()->error(
-				sprintf( 'Невалідна відповідь Gemini (%s): %s', $template->get_error_code(), $template->get_error_message() )
+				sprintf(
+					'Невалідна відповідь Gemini (%s): %s Початок відповіді: %s',
+					$template->get_error_code(),
+					$template->get_error_message(),
+					mb_substr( $ai_response, 0, 200 )
+				)
 			);
 			wp_send_json_error( array( 'message' => $template->get_error_message() ), 422 );
 		}
@@ -120,7 +126,10 @@ class AIPDF_Ajax_Handler {
 				// Просимо модель віддавати строго JSON.
 				'response_mime_type' => 'application/json',
 				'temperature'        => 0.4,
-				'maxOutputTokens'    => 8192,
+				'maxOutputTokens'    => 16384,
+				// Thinking вимкнено: для генерації шаблону воно зайве,
+				// а «думки» з'їдають ліміт токенів і обрізають JSON.
+				'thinkingConfig'     => array( 'thinkingBudget' => 0 ),
 			),
 		);
 
@@ -156,7 +165,22 @@ class AIPDF_Ajax_Handler {
 			);
 		}
 
-		$text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+		$candidate = $data['candidates'][0] ?? array();
+
+		// Діагностика обрізаних/заблокованих відповідей — одразу в лог.
+		$finish_reason = $candidate['finishReason'] ?? '';
+		if ( '' !== $finish_reason && 'STOP' !== $finish_reason ) {
+			AIPDF_Logger::get_instance()->warning( 'Gemini finishReason=' . $finish_reason . ' — відповідь може бути неповною.' );
+		}
+
+		// Склеюємо всі текстові частини (thinking-моделі можуть ділити відповідь).
+		$text = '';
+		foreach ( (array) ( $candidate['content']['parts'] ?? array() ) as $part ) {
+			if ( empty( $part['thought'] ) && isset( $part['text'] ) ) {
+				$text .= $part['text'];
+			}
+		}
+
 		if ( '' === $text ) {
 			return new WP_Error( 'aipdf_gemini_empty', __( 'Gemini повернув порожню відповідь.', 'ai-pdf-generator' ) );
 		}
