@@ -24,7 +24,9 @@ if ( file_exists( AIPDF_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
 }
 
 require_once AIPDF_PLUGIN_DIR . 'includes/logger.php';
+require_once AIPDF_PLUGIN_DIR . 'includes/brand.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/cpt-register.php';
+require_once AIPDF_PLUGIN_DIR . 'includes/template-editor.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/admin-page.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/ajax-handler.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/pdf-renderer.php';
@@ -105,6 +107,7 @@ final class AIPDF_Plugin {
 
 	private function __construct() {
 		new AIPDF_CPT_Register();
+		new AIPDF_Template_Editor();
 		new AIPDF_Admin_Page();
 		new AIPDF_Ajax_Handler();
 		new AIPDF_Trigger_Dispatcher();

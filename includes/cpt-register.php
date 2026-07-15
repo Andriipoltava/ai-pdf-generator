@@ -40,7 +40,7 @@ class AIPDF_CPT_Register {
 				// UI лише для адмінів, у меню плагіна.
 				'show_ui'             => true,
 				'show_in_menu'        => AIPDF_Plugin::ADMIN_SLUG,
-				'supports'            => array( 'title', 'editor', 'custom-fields' ),
+				'supports'            => array( 'title' ), // Без 'editor': він псує HTML-шаблон; свій редактор — AIPDF_Template_Editor.
 				'capability_type'     => 'post',
 				'capabilities'        => array(
 					'create_posts' => 'do_not_allow', // Створення лише через AJAX-генератор.

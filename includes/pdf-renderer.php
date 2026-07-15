@@ -68,6 +68,10 @@ class AIPDF_PDF_Renderer {
 			return new WP_Error( 'aipdf_no_template', __( 'Шаблон не знайдено.', 'ai-pdf-generator' ) );
 		}
 
+		// Брендинг (лого, колір, реквізити) як базові дані; конкретні дані
+		// події ($data) мають пріоритет над ними.
+		$data = array_merge( AIPDF_Brand::placeholders(), $data );
+
 		$html = $this->fill_placeholders( $post->post_content, $data );
 
 		$paper_size = (string) get_post_meta( $post_id, '_aipdf_paper_size', true );

@@ -52,6 +52,42 @@
 			activateTab( initial || 'playground' );
 		}() );
 
+		// ---------- Брендинг: вибір логотипу через медіатеку ----------
+		( function () {
+			var frame,
+				$url     = $( '#aipdf-logo-url' ),
+				$preview = $( '#aipdf-logo-preview' ),
+				$remove  = $( '#aipdf-logo-remove' );
+
+			$( '#aipdf-logo-upload' ).on( 'click', function ( e ) {
+				e.preventDefault();
+				if ( frame ) {
+					frame.open();
+					return;
+				}
+				frame = wp.media( {
+					title:    'Логотип',
+					button:   { text: 'Використати' },
+					library:  { type: 'image' },
+					multiple: false
+				} );
+				frame.on( 'select', function () {
+					var att = frame.state().get( 'selection' ).first().toJSON();
+					$url.val( att.url );
+					$preview.attr( 'src', att.url ).show();
+					$remove.show();
+				} );
+				frame.open();
+			} );
+
+			$remove.on( 'click', function ( e ) {
+				e.preventDefault();
+				$url.val( '' );
+				$preview.attr( 'src', '' ).hide();
+				$( this ).hide();
+			} );
+		}() );
+
 		// ---------- Швидкий старт: готові промпти ----------
 		$( '#aipdf-quickstart' ).on( 'change', function () {
 			var text = $( this ).val();

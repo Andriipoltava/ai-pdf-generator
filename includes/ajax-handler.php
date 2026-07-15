@@ -299,6 +299,10 @@ HTML RULES (html_template):
 3. Use placeholders instead of real data: {{client_name}}, {{email}}, {{date}}, {{qr_code}}, {{order_id}}, {{order_total}}, {{ticket_id}}, {{booking_date}}, {{service_name}}.
 4. For graphics use <img> with hard-coded width and height attributes.
 5. Do NOT include <script>, <style> blocks, event handlers, or external CSS.
+6. BRANDING — never hardcode a logo, company name/address/email, or brand color. ALWAYS use these placeholders so the user can change them later without editing HTML:
+   - Logo: <img src="{{logo_url}}" width="200" height="70" alt="Logo" /> (never write the word "LOGO" as text).
+   - Brand/accent color: use {{brand_color}} inside inline styles, e.g. style="color: {{brand_color}}" or style="background-color: {{brand_color}}".
+   - Seller/company details: {{company_name}}, {{company_address}}, {{company_email}}. Do NOT invent a company name like "WooCommerce Store".
 
 OUTPUT FORMAT: respond with VALID JSON ONLY, no Markdown fences, no surrounding text:
 {"trigger_plugin": "...", "action_type": "attach_to_email or download_link", "paper_size": "A4 | Letter | 800x400 | ...", "html_template": "clean HTML document code"}

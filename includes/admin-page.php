@@ -149,6 +149,33 @@ class AIPDF_Admin_Page {
 			)
 		);
 
+		// --- Брендинг ---
+		register_setting( 'aipdf_settings_group', AIPDF_Brand::OPT_LOGO, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'esc_url_raw',
+			'default'           => '',
+		) );
+		register_setting( 'aipdf_settings_group', AIPDF_Brand::OPT_COLOR, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( $this, 'sanitize_color' ),
+			'default'           => AIPDF_Brand::DEFAULT_COLOR,
+		) );
+		register_setting( 'aipdf_settings_group', AIPDF_Brand::OPT_NAME, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_text_field',
+			'default'           => '',
+		) );
+		register_setting( 'aipdf_settings_group', AIPDF_Brand::OPT_ADDRESS, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_text_field',
+			'default'           => '',
+		) );
+		register_setting( 'aipdf_settings_group', AIPDF_Brand::OPT_EMAIL, array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_email',
+			'default'           => '',
+		) );
+
 		register_setting(
 			'aipdf_settings_group',
 			AIPDF_Cron_Cleanup::OPTION_RETENTION,
@@ -158,6 +185,14 @@ class AIPDF_Admin_Page {
 				'default'           => AIPDF_Cron_Cleanup::DEFAULT_RETENTION_DAYS,
 			)
 		);
+	}
+
+	/**
+	 * HEX-колір; некоректне значення → колір бренду за замовчуванням.
+	 */
+	public function sanitize_color( $value ): string {
+		$color = sanitize_hex_color( (string) $value );
+		return $color ? $color : AIPDF_Brand::DEFAULT_COLOR;
 	}
 
 	/**
@@ -209,6 +244,9 @@ class AIPDF_Admin_Page {
 			return;
 		}
 
+		// Медіатека для вибору логотипу.
+		wp_enqueue_media();
+
 		wp_enqueue_script(
 			'aipdf-admin',
 			AIPDF_PLUGIN_URL . 'assets/admin.js',
@@ -245,6 +283,7 @@ class AIPDF_Admin_Page {
 		// Смарт-плейсхолдери: показуємо групи лише для активних плагінів.
 		$placeholder_groups = array(
 			__( 'Базові (завжди)', 'ai-pdf-generator' ) => array( '{{client_name}}', '{{email}}', '{{date}}', '{{qr_code}}' ),
+			__( 'Брендинг', 'ai-pdf-generator' )        => array( '{{logo_url}}', '{{brand_color}}', '{{company_name}}', '{{company_address}}', '{{company_email}}' ),
 		);
 		if ( class_exists( 'WooCommerce' ) ) {
 			$placeholder_groups[ __( 'WooCommerce', 'ai-pdf-generator' ) ] = array( '{{order_id}}', '{{order_total}}' );
@@ -395,6 +434,45 @@ class AIPDF_Admin_Page {
 									<?php esc_html_e( 'Згенеровані PDF-файли, старіші за вказану кількість днів, щодня видаляються автоматично (WP Cron).', 'ai-pdf-generator' ); ?>
 								</p>
 							</td>
+						</tr>
+					</table>
+
+					<h2><?php esc_html_e( 'Брендинг', 'ai-pdf-generator' ); ?></h2>
+					<p class="description" style="margin-bottom:8px;">
+						<?php esc_html_e( 'Ці значення підставляються у шаблони через плейсхолдери {{logo_url}}, {{brand_color}}, {{company_name}}, {{company_address}}, {{company_email}} — щоб лого, кольори та реквізити можна було міняти без правки HTML.', 'ai-pdf-generator' ); ?>
+					</p>
+					<?php
+					$brand_logo    = (string) get_option( AIPDF_Brand::OPT_LOGO, '' );
+					$brand_color   = (string) get_option( AIPDF_Brand::OPT_COLOR, AIPDF_Brand::DEFAULT_COLOR );
+					$brand_name    = (string) get_option( AIPDF_Brand::OPT_NAME, '' );
+					$brand_address = (string) get_option( AIPDF_Brand::OPT_ADDRESS, '' );
+					$brand_email   = (string) get_option( AIPDF_Brand::OPT_EMAIL, '' );
+					?>
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row"><?php esc_html_e( 'Логотип', 'ai-pdf-generator' ); ?></th>
+							<td>
+								<input type="hidden" id="aipdf-logo-url" name="<?php echo esc_attr( AIPDF_Brand::OPT_LOGO ); ?>" value="<?php echo esc_attr( $brand_logo ); ?>" />
+								<img id="aipdf-logo-preview" src="<?php echo esc_url( $brand_logo ); ?>" alt="" style="max-width:200px;max-height:70px;display:<?php echo $brand_logo ? 'block' : 'none'; ?>;margin-bottom:8px;border:1px solid #ddd;padding:4px;background:#fff;" />
+								<button type="button" class="button" id="aipdf-logo-upload"><?php esc_html_e( 'Вибрати зображення', 'ai-pdf-generator' ); ?></button>
+								<button type="button" class="button" id="aipdf-logo-remove" style="display:<?php echo $brand_logo ? 'inline-block' : 'none'; ?>;"><?php esc_html_e( 'Прибрати', 'ai-pdf-generator' ); ?></button>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="aipdf-color"><?php esc_html_e( 'Основний колір', 'ai-pdf-generator' ); ?></label></th>
+							<td><input type="color" id="aipdf-color" name="<?php echo esc_attr( AIPDF_Brand::OPT_COLOR ); ?>" value="<?php echo esc_attr( $brand_color ); ?>" /></td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="aipdf-company"><?php esc_html_e( 'Назва компанії', 'ai-pdf-generator' ); ?></label></th>
+							<td><input type="text" id="aipdf-company" name="<?php echo esc_attr( AIPDF_Brand::OPT_NAME ); ?>" value="<?php echo esc_attr( $brand_name ); ?>" class="regular-text" /></td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="aipdf-address"><?php esc_html_e( 'Адреса', 'ai-pdf-generator' ); ?></label></th>
+							<td><input type="text" id="aipdf-address" name="<?php echo esc_attr( AIPDF_Brand::OPT_ADDRESS ); ?>" value="<?php echo esc_attr( $brand_address ); ?>" class="regular-text" /></td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="aipdf-brand-email"><?php esc_html_e( 'Email компанії', 'ai-pdf-generator' ); ?></label></th>
+							<td><input type="email" id="aipdf-brand-email" name="<?php echo esc_attr( AIPDF_Brand::OPT_EMAIL ); ?>" value="<?php echo esc_attr( $brand_email ); ?>" class="regular-text" /></td>
 						</tr>
 					</table>
 					<?php submit_button( __( 'Зберегти налаштування', 'ai-pdf-generator' ) ); ?>
