@@ -1,41 +1,65 @@
 /**
- * AI PDF Generator — редактор шаблону: живе превю.
- * Підставляє демо-дані у плейсхолдери й показує результат в iframe.
+ * AI PDF Generator — редактор шаблону.
+ * Візуальні поля (кольори/тексти) + живе превю: підставляє значення полів
+ * і демо-дані у HTML-каркас та рендерить у iframe.
  */
 ( function ( $ ) {
 	'use strict';
 
 	$( function () {
-		var $textarea = $( '#aipdf-html-content' ),
+		var $skeleton = $( '#aipdf-html-content' ),
 			preview   = document.getElementById( 'aipdf-editor-preview' ),
 			sample    = ( window.aipdfEditor && window.aipdfEditor.sample ) || {},
 			timer     = null;
 
-		if ( ! $textarea.length || ! preview ) {
+		if ( ! preview ) {
 			return;
 		}
 
-		// Заміна {{key}} на демо-значення (невідомі — на порожньо).
+		// Значення візуальних полів: key => value (color/text/textarea).
+		function fieldValues() {
+			var map = {};
+			$( '.aipdf-field' ).each( function () {
+				var key = $( this ).data( 'field-key' );
+				if ( key ) {
+					map[ String( key ).toLowerCase() ] = $( this ).val();
+				}
+			} );
+			return map;
+		}
+
+		// Підстановка {{key}}: спершу значення полів, потім демо-дані.
 		function fill( html ) {
+			var data = $.extend( {}, sample, fieldValues() );
 			return html.replace( /\{\{\s*([a-z0-9_]+)\s*\}\}/gi, function ( match, key ) {
-				var value = sample[ key.toLowerCase() ];
+				var value = data[ key.toLowerCase() ];
 				return ( 'undefined' === typeof value ) ? '' : value;
 			} );
 		}
 
 		function render() {
-			// <base target="_blank"> — щоб посилання не намагались вести всередині sandbox.
-			preview.srcdoc = '<base target="_blank">' + fill( $textarea.val() );
+			var html = $skeleton.length ? $skeleton.val() : '';
+			preview.srcdoc = '<base target="_blank">' + fill( html );
 		}
 
 		function scheduleRender() {
 			window.clearTimeout( timer );
-			timer = window.setTimeout( render, 300 );
+			timer = window.setTimeout( render, 250 );
 		}
 
-		$textarea.on( 'input', scheduleRender );
+		// WP Color Picker для полів-кольорів.
+		if ( $.fn.wpColorPicker ) {
+			$( '.aipdf-color-field' ).wpColorPicker( {
+				change: scheduleRender,
+				clear:  scheduleRender
+			} );
+		}
+
+		// Живе оновлення при зміні будь-якого поля або каркаса.
+		$( document ).on( 'input', '.aipdf-field', scheduleRender );
+		$skeleton.on( 'input', scheduleRender );
 		$( '#aipdf-preview-refresh' ).on( 'click', render );
 
-		render(); // Первинний рендер.
+		render();
 	} );
 }( jQuery ) );

@@ -82,10 +82,19 @@ class AIPDF_Ajax_Handler {
 				'edit_link'      => get_edit_post_link( $post_id, 'raw' ),
 				'test_pdf_url'   => AIPDF_Admin_Page::get_test_pdf_url( $post_id ),
 				'pdf_available'  => AIPDF_PDF_Renderer::is_available(),
-				'trigger_plugin' => $template['trigger_plugin'],
-				'action_type'    => $template['action_type'],
-				'paper_size'     => $template['paper_size'],
-				'html_template'  => $template['html_template'],
+				'trigger_plugin'  => $template['trigger_plugin'],
+				'action_type'     => $template['action_type'],
+				'paper_size'      => $template['paper_size'],
+				'html_template'   => $template['html_template'],
+				'editable_fields' => $template['editable_fields'],
+				// Готове превю: каркас + значення полів + демо-дані.
+				'preview_html'    => AIPDF_PDF_Renderer::substitute(
+					$template['html_template'],
+					array_merge(
+						AIPDF_PDF_Renderer::sample_data(),
+						AIPDF_Fields::values( $template['editable_fields'] )
+					)
+				),
 			)
 		);
 	}
@@ -241,11 +250,27 @@ class AIPDF_Ajax_Handler {
 			return new WP_Error( 'aipdf_empty_html', __( 'HTML-шаблон порожній після санітизації.', 'ai-pdf-generator' ) );
 		}
 
+		// Візуальні поля (кольори, заголовки, підписи) — джерело правди для
+		// редагування. Каркас використовує їх як {{field_key}}.
+		$fields = AIPDF_Fields::normalize( $parsed['editable_fields'] ?? array() );
+
+		// Відкидаємо «сирітські» поля, яких немає в каркасі, — щоб у редакторі
+		// не було контролів, що ні на що не впливають.
+		$fields = array_values(
+			array_filter(
+				$fields,
+				static function ( $field ) use ( $html ) {
+					return (bool) preg_match( '/\{\{\s*' . preg_quote( $field['key'], '/' ) . '\s*\}\}/i', $html );
+				}
+			)
+		);
+
 		return array(
-			'trigger_plugin' => $trigger,
-			'action_type'    => $action,
-			'paper_size'     => $paper,
-			'html_template'  => $html,
+			'trigger_plugin'  => $trigger,
+			'action_type'     => $action,
+			'paper_size'      => $paper,
+			'html_template'   => $html,
+			'editable_fields' => $fields,
 		);
 	}
 
@@ -273,6 +298,7 @@ class AIPDF_Ajax_Handler {
 		update_post_meta( $post_id, '_aipdf_trigger_plugin', $template['trigger_plugin'] );
 		update_post_meta( $post_id, '_aipdf_action_type', $template['action_type'] );
 		update_post_meta( $post_id, '_aipdf_paper_size', $template['paper_size'] );
+		AIPDF_Fields::save( $post_id, $template['editable_fields'] ?? array() );
 
 		return $post_id;
 	}
@@ -312,8 +338,18 @@ HTML RULES (html_template):
    - Brand/accent color: use {{brand_color}} inside inline styles, e.g. style="color: {{brand_color}}" or style="background-color: {{brand_color}}".
    - Seller/company details: {{company_name}}, {{company_address}}, {{company_email}}. Do NOT invent a company name like "WooCommerce Store".
 
+EDITABLE FIELDS (editable_fields) — the KEY feature. The user must be able to visually edit the template WITHOUT touching HTML. So:
+- Extract every STATIC, human-editable piece of content into an editable field: headings/titles, captions, static labels ("Invoice", "Thank you", "Total:"), accent colors, background colors, footer notes, button texts. NOT dynamic data (client_name, order_id, dates) — those stay as data placeholders from the trigger list.
+- In html_template reference each field as {{field_key}} (snake_case, unique). Example: <h1 style="color: {{accent_color}}">{{heading}}</h1>.
+- MANDATORY: every key you list in editable_fields MUST actually appear in html_template as {{key}} at least once. Do NOT declare a field you don't use (e.g. a background color you never apply). If you introduce a color/title/caption, wire it into the HTML via its placeholder.
+- Return an "editable_fields" array. Each item: {"key","type","label","value"}.
+  - "type" is one of: "color" (hex value like #1a1a2e), "text" (short single line), "textarea" (multi-line).
+  - "label" is a short human label in the user's language (e.g. "Заголовок", "Колір акценту").
+  - "value" is a sensible default that matches what you put in the HTML.
+- Aim for 3–8 editable fields. Do NOT duplicate brand placeholders ({{logo_url}}, {{brand_color}}, {{company_name}}…) as editable fields — those are managed separately.
+
 OUTPUT FORMAT: respond with VALID JSON ONLY, no Markdown fences, no surrounding text:
-{"trigger_plugin": "...", "action_type": "attach_to_email or download_link", "paper_size": "A4 | Letter | 800x400 | ...", "html_template": "clean HTML document code"}
+{"trigger_plugin": "...", "action_type": "attach_to_email or download_link", "paper_size": "A4 | Letter | 800x400 | ...", "html_template": "HTML skeleton using {{field_key}} and data placeholders", "editable_fields": [{"key":"heading","type":"text","label":"Заголовок","value":"ІНВОЙС"},{"key":"accent_color","type":"color","label":"Колір акценту","value":"#1a1a2e"}]}
 PROMPT;
 	}
 }

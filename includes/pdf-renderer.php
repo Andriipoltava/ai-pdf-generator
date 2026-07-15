@@ -68,9 +68,13 @@ class AIPDF_PDF_Renderer {
 			return new WP_Error( 'aipdf_no_template', __( 'Шаблон не знайдено.', 'ai-pdf-generator' ) );
 		}
 
-		// Брендинг (лого, колір, реквізити) як базові дані; конкретні дані
-		// події ($data) мають пріоритет над ними.
-		$data = array_merge( AIPDF_Brand::placeholders(), $data );
+		// Порядок пріоритету (пізніше перекриває раніше):
+		// бренд → значення візуальних полів → конкретні дані події.
+		$data = array_merge(
+			AIPDF_Brand::placeholders(),
+			AIPDF_Fields::values( AIPDF_Fields::get( $post_id ) ),
+			$data
+		);
 
 		$html = $this->fill_placeholders( $post->post_content, $data );
 
@@ -193,6 +197,16 @@ class AIPDF_PDF_Renderer {
 	 * esc_url, решта — esc_html. Невідомі плейсхолдери замінюються на порожньо.
 	 */
 	private function fill_placeholders( string $html, array $data ): string {
+		return self::substitute( $html, $data );
+	}
+
+	/**
+	 * Підстановка даних у плейсхолдери {{key}} (спільна логіка для рендеру
+	 * PDF і для превю в адмінці/Playground).
+	 *
+	 * @param array<string, string> $data
+	 */
+	public static function substitute( string $html, array $data ): string {
 		return (string) preg_replace_callback(
 			'/\{\{\s*([a-z0-9_]+)\s*\}\}/i',
 			static function ( array $m ) use ( $data ): string {
@@ -209,6 +223,41 @@ class AIPDF_PDF_Renderer {
 				return $is_url_key ? esc_url( $value ) : esc_html( $value );
 			},
 			$html
+		);
+	}
+
+	/**
+	 * Демо-дані для превю (бренд + типові поля подій). Спільне джерело для
+	 * редактора шаблону та Playground, щоб превю було однаковим.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function sample_data(): array {
+		return array_merge(
+			AIPDF_Brand::sample_placeholders(),
+			array(
+				'client_name'   => 'Іван Петренко',
+				'customer_name' => 'Іван Петренко',
+				'billing_name'  => 'Іван Петренко',
+				'attendee_name' => 'Іван Петренко',
+				'user_name'     => 'Іван Петренко',
+				'donor_name'    => 'Іван Петренко',
+				'email'         => 'client@example.com',
+				'billing_email' => 'client@example.com',
+				'user_email'    => 'client@example.com',
+				'sender_email'  => 'client@example.com',
+				'date'          => wp_date( get_option( 'date_format' ) ),
+				'order_id'      => '1024',
+				'order_total'   => '1250.00 UAH',
+				'amount'        => '1250.00 UAH',
+				'ticket_id'     => 'TCK-58291',
+				'booking_date'  => wp_date( 'd.m.Y H:i' ),
+				'service_name'  => 'Консультація',
+				'event_name'    => 'Демо-подія',
+				'course_name'   => 'Демо-курс',
+				'products_table' => 'Товар A × 1 — 1250.00 UAH',
+				'qr_code'       => 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=DEMO',
+			)
 		);
 	}
 

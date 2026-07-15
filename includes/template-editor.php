@@ -43,10 +43,13 @@ class AIPDF_Template_Editor {
 			return;
 		}
 
+		// WP Color Picker для полів-кольорів.
+		wp_enqueue_style( 'wp-color-picker' );
+
 		wp_enqueue_script(
 			'aipdf-editor',
 			AIPDF_PLUGIN_URL . 'assets/editor.js',
-			array( 'jquery' ),
+			array( 'jquery', 'wp-color-picker' ),
 			AIPDF_VERSION,
 			true
 		);
@@ -55,30 +58,17 @@ class AIPDF_Template_Editor {
 			'aipdf-editor',
 			'aipdfEditor',
 			array(
-				// Демо-дані для превю (бренд + типові поля).
-				'sample' => array_merge(
-					AIPDF_Brand::sample_placeholders(),
-					array(
-						'client_name'  => 'Іван Петренко',
-						'email'        => 'client@example.com',
-						'order_id'     => '1024',
-						'order_total'  => '1250.00 UAH',
-						'date'         => wp_date( get_option( 'date_format' ) ),
-						'ticket_id'    => 'TCK-58291',
-						'booking_date' => wp_date( 'd.m.Y H:i' ),
-						'service_name' => 'Консультація',
-						'qr_code'      => 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=TCK-58291',
-					)
-				),
+				// Демо-дані для превю (спільні з рендером PDF та Playground).
+				'sample' => AIPDF_PDF_Renderer::sample_data(),
 			)
 		);
 	}
 
 	public function add_meta_boxes(): void {
 		add_meta_box(
-			'aipdf_html',
-			__( 'HTML шаблон', 'ai-pdf-generator' ),
-			array( $this, 'box_html' ),
+			'aipdf_fields',
+			__( 'Візуальне редагування', 'ai-pdf-generator' ),
+			array( $this, 'box_fields' ),
 			AIPDF_Plugin::CPT,
 			'normal',
 			'high'
@@ -92,6 +82,14 @@ class AIPDF_Template_Editor {
 			'high'
 		);
 		add_meta_box(
+			'aipdf_html',
+			__( 'Розширено: HTML-каркас', 'ai-pdf-generator' ),
+			array( $this, 'box_html' ),
+			AIPDF_Plugin::CPT,
+			'normal',
+			'low'
+		);
+		add_meta_box(
 			'aipdf_params',
 			__( 'Параметри генерації', 'ai-pdf-generator' ),
 			array( $this, 'box_params' ),
@@ -102,18 +100,81 @@ class AIPDF_Template_Editor {
 	}
 
 	/**
-	 * Meta box: сирий HTML.
+	 * Meta box: візуальні поля (кольори/тексти) з editable_fields.
+	 * Сирий HTML тут прихований — редагування лише через поля.
+	 */
+	public function box_fields( WP_Post $post ): void {
+		wp_nonce_field( self::NONCE, self::NONCE );
+
+		$fields = AIPDF_Fields::get( $post->ID );
+
+		if ( empty( $fields ) ) {
+			?>
+			<p class="description">
+				<?php esc_html_e( 'Цей шаблон не має візуальних полів (згенерований раніше або без них). Ви можете редагувати HTML-каркас у блоці «Розширено» нижче, або згенерувати новий шаблон у Playground — нові шаблони отримують візуальні поля автоматично.', 'ai-pdf-generator' ); ?>
+			</p>
+			<?php
+			return;
+		}
+		?>
+		<p class="description" style="margin:0 0 12px;">
+			<?php esc_html_e( 'Змінюйте кольори та тексти — превю оновлюється миттєво. HTML-структуру чіпати не потрібно.', 'ai-pdf-generator' ); ?>
+		</p>
+		<table class="form-table" role="presentation">
+			<?php foreach ( $fields as $field ) : ?>
+				<tr>
+					<th scope="row" style="width:200px;">
+						<label for="aipdf-field-<?php echo esc_attr( $field['key'] ); ?>"><?php echo esc_html( $field['label'] ); ?></label>
+					</th>
+					<td>
+						<?php if ( 'color' === $field['type'] ) : ?>
+							<input
+								type="text"
+								id="aipdf-field-<?php echo esc_attr( $field['key'] ); ?>"
+								name="aipdf_field[<?php echo esc_attr( $field['key'] ); ?>]"
+								value="<?php echo esc_attr( $field['value'] ); ?>"
+								class="aipdf-color-field aipdf-field"
+								data-field-key="<?php echo esc_attr( $field['key'] ); ?>"
+							/>
+						<?php elseif ( 'textarea' === $field['type'] ) : ?>
+							<textarea
+								id="aipdf-field-<?php echo esc_attr( $field['key'] ); ?>"
+								name="aipdf_field[<?php echo esc_attr( $field['key'] ); ?>]"
+								rows="3"
+								class="large-text aipdf-field"
+								data-field-key="<?php echo esc_attr( $field['key'] ); ?>"
+							><?php echo esc_textarea( $field['value'] ); ?></textarea>
+						<?php else : ?>
+							<input
+								type="text"
+								id="aipdf-field-<?php echo esc_attr( $field['key'] ); ?>"
+								name="aipdf_field[<?php echo esc_attr( $field['key'] ); ?>]"
+								value="<?php echo esc_attr( $field['value'] ); ?>"
+								class="regular-text aipdf-field"
+								data-field-key="<?php echo esc_attr( $field['key'] ); ?>"
+							/>
+						<?php endif; ?>
+						<code style="margin-left:8px;color:#8c8f94;">{{<?php echo esc_html( $field['key'] ); ?>}}</code>
+					</td>
+				</tr>
+			<?php endforeach; ?>
+		</table>
+		<?php
+	}
+
+	/**
+	 * Meta box: сирий HTML-каркас (розширено). Прихований у згорнутому блоці —
+	 * основне редагування через візуальні поля вище.
 	 */
 	public function box_html( WP_Post $post ): void {
-		wp_nonce_field( self::NONCE, self::NONCE );
 		?>
 		<p class="description" style="margin:0 0 8px;">
-			<?php esc_html_e( 'Сирий HTML документа. Доступні плейсхолдери на кшталт {{client_name}}, {{logo_url}}, {{brand_color}} підставляються під час генерації PDF.', 'ai-pdf-generator' ); ?>
+			<?php esc_html_e( 'HTML-каркас документа з плейсхолдерами {{field_key}} (візуальні поля) та даними події ({{client_name}}, {{order_id}}…). Редагуйте лише якщо потрібно змінити структуру.', 'ai-pdf-generator' ); ?>
 		</p>
 		<textarea
 			id="aipdf-html-content"
 			name="aipdf_html"
-			rows="18"
+			rows="16"
 			style="width:100%;font-family:Menlo,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre;overflow:auto;"
 			spellcheck="false"
 		><?php echo esc_textarea( $post->post_content ); ?></textarea>
@@ -207,6 +268,20 @@ class AIPDF_Template_Editor {
 				)
 			);
 			add_action( 'save_post_' . AIPDF_Plugin::CPT, array( $this, 'save' ), 10, 2 );
+		}
+
+		// Візуальні поля: беремо збережені визначення (тип/лейбл), оновлюємо
+		// лише значення з POST — щоб тип не можна було підмінити з форми.
+		if ( isset( $_POST['aipdf_field'] ) && is_array( $_POST['aipdf_field'] ) ) {
+			$posted = wp_unslash( $_POST['aipdf_field'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- санітизуємо нижче через AIPDF_Fields.
+			$fields = AIPDF_Fields::get( $post_id );
+			foreach ( $fields as &$field ) {
+				if ( array_key_exists( $field['key'], $posted ) ) {
+					$field['value'] = AIPDF_Fields::sanitize_value( $field['type'], $posted[ $field['key'] ] );
+				}
+			}
+			unset( $field );
+			AIPDF_Fields::save( $post_id, $fields );
 		}
 
 		// Параметри генерації.

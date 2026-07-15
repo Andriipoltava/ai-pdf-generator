@@ -167,10 +167,11 @@
 						.attr( 'href', d.test_pdf_url )
 						.toggle( !! d.pdf_available );
 
-					// Попередній перегляд у пісочниці iframe (sandbox="" вимикає JS).
+					// Превю: сервер уже підставив значення полів + демо-дані
+					// (preview_html). Fallback — сирий каркас.
 					$( '#aipdf-preview' ).attr(
 						'srcdoc',
-						'<base target="_blank">' + d.html_template
+						'<base target="_blank">' + ( d.preview_html || d.html_template )
 					);
 
 					$result.show();
