@@ -1,0 +1,22 @@
+# Composer-залежності — ставляться через `composer install`,
+# у release-архів їх додає build.sh.
+/vendor/
+
+# Логи та тимчасові файли плагіна (якщо репо лежить у тестовому WP)
+uploads/ai-pdf-generator/*.log
+uploads/ai-pdf-generator/tmp/
+*.log
+
+# ОС
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Збірка
+/build/
+/*.zip

@@ -1,0 +1,14 @@
+{
+    "name": "andrii/ai-pdf-generator",
+    "description": "AI PDF Generator — WordPress plugin that turns AI-generated HTML templates into real PDF files.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.0",
+        "mpdf/mpdf": "^8.2"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}
