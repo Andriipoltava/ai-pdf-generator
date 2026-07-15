@@ -281,7 +281,9 @@ class AIPDF_Ajax_Handler {
 	 * та вимоги до HTML під PDF-конвертери.
 	 */
 	private function get_system_prompt(): string {
-		$triggers = implode( ', ', AIPDF_Plugin::ALLOWED_TRIGGERS );
+		// Лише доступні тригери (активні плагіни) — щоб AI не пропонував
+		// подію плагіна, якого немає на сайті.
+		$triggers = implode( ', ', AIPDF_Triggers::available() );
 
 		return <<<PROMPT
 You are a Senior WordPress Developer and an AI assistant for a PDF generation plugin.

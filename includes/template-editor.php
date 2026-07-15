@@ -144,8 +144,23 @@ class AIPDF_Template_Editor {
 		<p>
 			<label for="aipdf-trigger"><strong><?php esc_html_e( 'Тригер', 'ai-pdf-generator' ); ?></strong></label><br />
 			<select id="aipdf-trigger" name="aipdf_trigger" style="width:100%;">
-				<?php foreach ( AIPDF_Plugin::ALLOWED_TRIGGERS as $t ) : ?>
-					<option value="<?php echo esc_attr( $t ); ?>" <?php selected( $trigger, $t ); ?>><?php echo esc_html( $t ); ?></option>
+				<?php
+				// Показуємо лише доступні тригери (активні плагіни). Якщо у шаблону
+				// збережений тригер плагіна, який зараз вимкнено, — додаємо його
+				// окремо, щоб значення не загубилось при збереженні.
+				$options = AIPDF_Triggers::available();
+				if ( '' !== $trigger && ! in_array( $trigger, $options, true ) ) {
+					$options[] = $trigger;
+				}
+				foreach ( $options as $t ) :
+					$is_inactive = ! AIPDF_Triggers::is_available( $t );
+					?>
+					<option value="<?php echo esc_attr( $t ); ?>" <?php selected( $trigger, $t ); ?>>
+						<?php
+						echo esc_html( AIPDF_Triggers::label( $t ) );
+						echo $is_inactive ? ' ' . esc_html__( '(плагін неактивний)', 'ai-pdf-generator' ) : '';
+						?>
+					</option>
 				<?php endforeach; ?>
 			</select>
 		</p>

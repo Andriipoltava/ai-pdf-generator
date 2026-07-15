@@ -25,11 +25,19 @@ class AIPDF_Trigger_Dispatcher {
 	public function __construct() {
 		$this->renderer = new AIPDF_PDF_Renderer();
 
-		// --- Реальні хуки сторонніх плагінів. ---
-		add_action( 'woocommerce_payment_complete', array( $this, 'on_wc_order_paid' ), 10, 1 );
-		add_action( 'amelia_after_booking_added', array( $this, 'on_amelia_booking' ), 10, 1 );
-		add_action( 'wpcf7_mail_sent', array( $this, 'on_cf7_submit' ), 10, 1 );
-		add_action( 'elementor_pro/forms/new_record', array( $this, 'on_elementor_form' ), 10, 2 );
+		// --- Хуки сторонніх плагінів реєструємо ЛИШЕ якщо плагін активний. ---
+		if ( AIPDF_Triggers::is_available( 'wc_order_paid' ) ) {
+			add_action( 'woocommerce_payment_complete', array( $this, 'on_wc_order_paid' ), 10, 1 );
+		}
+		if ( AIPDF_Triggers::is_available( 'amelia_booking_done' ) ) {
+			add_action( 'amelia_after_booking_added', array( $this, 'on_amelia_booking' ), 10, 1 );
+		}
+		if ( AIPDF_Triggers::is_available( 'cf7_submit' ) ) {
+			add_action( 'wpcf7_mail_sent', array( $this, 'on_cf7_submit' ), 10, 1 );
+		}
+		if ( AIPDF_Triggers::is_available( 'elementor_pro_form_submit' ) ) {
+			add_action( 'elementor_pro/forms/new_record', array( $this, 'on_elementor_form' ), 10, 2 );
+		}
 
 		/**
 		 * Універсальна точка входу для решти тригерів:
