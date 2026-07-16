@@ -88,6 +88,42 @@
 			} );
 		}() );
 
+		// ---------- Референс-зображення для Playground ----------
+		( function () {
+			var frame,
+				$id      = $( '#aipdf-ref-id' ),
+				$preview = $( '#aipdf-ref-preview' ),
+				$remove  = $( '#aipdf-ref-remove' );
+
+			$( '#aipdf-ref-upload' ).on( 'click', function ( e ) {
+				e.preventDefault();
+				if ( frame ) {
+					frame.open();
+					return;
+				}
+				frame = wp.media( {
+					title:    'Референс-зображення',
+					button:   { text: 'Використати' },
+					library:  { type: 'image' },
+					multiple: false
+				} );
+				frame.on( 'select', function () {
+					var att = frame.state().get( 'selection' ).first().toJSON();
+					$id.val( att.id );
+					$preview.attr( 'src', att.url ).show();
+					$remove.show();
+				} );
+				frame.open();
+			} );
+
+			$remove.on( 'click', function ( e ) {
+				e.preventDefault();
+				$id.val( '' );
+				$preview.attr( 'src', '' ).hide();
+				$( this ).hide();
+			} );
+		}() );
+
 		// ---------- Швидкий старт: готові промпти ----------
 		$( '#aipdf-quickstart' ).on( 'change', function () {
 			var text = $( this ).val();
@@ -191,9 +227,10 @@
 			$spinner.addClass( 'is-active' );
 
 			$.post( aipdfData.ajaxUrl, {
-				action: 'aipdf_generate',
-				nonce:  aipdfData.nonce,
-				prompt: prompt
+				action:       'aipdf_generate',
+				nonce:        aipdfData.nonce,
+				prompt:       prompt,
+				reference_id: $( '#aipdf-ref-id' ).val() || ''
 			} )
 				.done( function ( response ) {
 					if ( ! response || ! response.success ) {

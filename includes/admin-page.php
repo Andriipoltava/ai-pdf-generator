@@ -346,6 +346,15 @@ class AIPDF_Admin_Page {
 				</div>
 
 				<textarea id="aipdf-prompt" rows="5" class="large-text" placeholder="<?php esc_attr_e( 'Ваш запит…', 'ai-pdf-generator' ); ?>"></textarea>
+
+				<p style="margin:8px 0;">
+					<input type="hidden" id="aipdf-ref-id" value="" />
+					<button type="button" class="button" id="aipdf-ref-upload"><?php esc_html_e( 'Прикріпити референс-зображення', 'ai-pdf-generator' ); ?></button>
+					<button type="button" class="button" id="aipdf-ref-remove" style="display:none;"><?php esc_html_e( 'Прибрати', 'ai-pdf-generator' ); ?></button>
+					<img id="aipdf-ref-preview" src="" alt="" style="display:none;max-height:56px;vertical-align:middle;margin-left:8px;border:1px solid #ddd;padding:2px;background:#fff;" />
+					<span class="description" style="display:block;margin-top:4px;"><?php esc_html_e( 'Необов’язково: додайте зразок дизайну (PNG/JPG/WEBP, до 5 МБ) — AI відтворить його макет, кольори та стиль.', 'ai-pdf-generator' ); ?></span>
+				</p>
+
 				<p>
 					<button type="button" class="button button-primary" id="aipdf-generate-btn">
 						<?php esc_html_e( 'Згенерувати', 'ai-pdf-generator' ); ?>

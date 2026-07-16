@@ -64,15 +64,59 @@ class AIPDF_Ajax_Handler {
 			wp_send_json_error( array( 'message' => __( 'Запит порожній.', 'ai-pdf-generator' ) ), 400 );
 		}
 
-		$template = $this->ask_gemini(
-			$api_key,
-			array( array( 'role' => 'user', 'text' => $user_prompt ) )
-		);
+		// Опційне зображення-референс (WP Media): передаємо в Gemini як inline_data.
+		$turn = array( 'role' => 'user', 'text' => $user_prompt );
+		$image = $this->build_reference_image( isset( $_POST['reference_id'] ) ? $_POST['reference_id'] : 0 );
+		if ( $image ) {
+			$turn['image'] = $image;
+		}
+
+		$template = $this->ask_gemini( $api_key, array( $turn ) );
 		if ( is_wp_error( $template ) ) {
 			wp_send_json_error( array( 'message' => $template->get_error_message() ), 502 );
 		}
 
 		wp_send_json_success( $this->draft_payload( $template, $user_prompt ) );
+	}
+
+	/**
+	 * Готує зображення-референс для Gemini inline_data.
+	 *
+	 * @param mixed $attachment_id ID вкладення з медіатеки.
+	 * @return array{mime:string,data:string}|null base64-дані або null.
+	 */
+	private function build_reference_image( $attachment_id ): ?array {
+		$id = absint( $attachment_id );
+		if ( ! $id || 'attachment' !== get_post_type( $id ) ) {
+			return null;
+		}
+
+		$mime = (string) get_post_mime_type( $id );
+		if ( ! in_array( $mime, array( 'image/png', 'image/jpeg', 'image/webp' ), true ) ) {
+			return null;
+		}
+
+		$path = get_attached_file( $id );
+		if ( ! $path || ! file_exists( $path ) ) {
+			return null;
+		}
+
+		// Ліміт 5 МБ — щоб не роздувати запит до API.
+		$size = filesize( $path );
+		if ( false === $size || $size > 5 * 1024 * 1024 ) {
+			AIPDF_Logger::get_instance()->warning( 'Референс-зображення завелике (>5MB) — пропущено.' );
+			return null;
+		}
+
+		$bytes = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions -- локальний файл в uploads.
+		if ( false === $bytes ) {
+			return null;
+		}
+
+		return array(
+			'mime' => $mime,
+			'data' => base64_encode( $bytes ),
+		);
 	}
 
 	/**
@@ -240,9 +284,21 @@ class AIPDF_Ajax_Handler {
 
 		$mapped = array();
 		foreach ( $contents as $turn ) {
+			$parts = array();
+			// Зображення-референс (inline_data) — перед текстом.
+			if ( ! empty( $turn['image']['data'] ) ) {
+				$parts[] = array(
+					'inline_data' => array(
+						'mime_type' => (string) ( $turn['image']['mime'] ?? 'image/png' ),
+						'data'      => (string) $turn['image']['data'],
+					),
+				);
+			}
+			$parts[] = array( 'text' => (string) ( $turn['text'] ?? '' ) );
+
 			$mapped[] = array(
 				'role'  => ( 'model' === ( $turn['role'] ?? 'user' ) ) ? 'model' : 'user',
-				'parts' => array( array( 'text' => (string) ( $turn['text'] ?? '' ) ) ),
+				'parts' => $parts,
 			);
 		}
 
@@ -459,6 +515,8 @@ TRIGGER RULES (trigger_plugin) — pick EXACTLY ONE key from this list of AVAILA
 {$trigger_block}
 
 Return the trigger key verbatim (e.g. "woocommerce_payment_complete"). If nothing fits, use "manual_generation". Allowed keys: {$trigger_keys}.
+
+REFERENCE IMAGE: if an image is attached, treat it as a visual reference — replicate its layout, structure, color scheme and overall style as closely as possible within the table-based HTML constraints. Turn its colors/titles into editable_fields.
 
 HTML RULES (html_template):
 1. Only basic HTML with inline CSS (style="...").
