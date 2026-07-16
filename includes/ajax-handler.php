@@ -25,8 +25,7 @@ class AIPDF_Ajax_Handler {
 
 	public function __construct() {
 		// Лише для залогінених адмінів — wp_ajax_nopriv не реєструємо свідомо.
-		add_action( 'wp_ajax_aipdf_generate', array( $this, 'handle_generate' ) );
-		add_action( 'wp_ajax_aipdf_refine', array( $this, 'handle_refine' ) );
+		add_action( 'wp_ajax_aipdf_chat', array( $this, 'handle_chat' ) );
 		add_action( 'wp_ajax_aipdf_save', array( $this, 'handle_save' ) );
 	}
 
@@ -53,30 +52,101 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * КРОК 1 — Генерація ЧЕРНЕТКИ. Пост НЕ створюється: повертаємо превю
-	 * і дані, які клієнт тримає до збереження.
+	 * ЄДИНА точка входу чату: перше повідомлення І кожне наступне уточнення
+	 * проходять один і той самий код — це усуває клас багів, коли generate
+	 * і refine розходились (напр. референс, який передавався лише при
+	 * першій генерації, але губився при уточненні).
+	 *
+	 * Клієнт зберігає повний `current_layout` (JSON) після кожної успішної
+	 * відповіді і надсилає його назад разом із наступним повідомленням —
+	 * це і є «пам'ять» чату, а не наростаюча історія реплік.
+	 *
+	 * Пост НЕ створюється: лише превю, до явного «Зберегти шаблон».
 	 */
-	public function handle_generate(): void {
+	public function handle_chat(): void {
 		$api_key = $this->guard_and_key();
 
 		$user_prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
 		if ( '' === $user_prompt ) {
-			wp_send_json_error( array( 'message' => __( 'Запит порожній.', 'ai-pdf-generator' ) ), 400 );
+			wp_send_json_error( array( 'message' => __( 'Повідомлення порожнє.', 'ai-pdf-generator' ) ), 400 );
 		}
 
-		// Опційне зображення-референс (WP Media): передаємо в Gemini як inline_data.
-		$turn = array( 'role' => 'user', 'text' => $user_prompt );
+		// Поточний макет (якщо це не перше повідомлення в чаті).
+		$current_layout_json = isset( $_POST['current_layout'] ) ? (string) wp_unslash( $_POST['current_layout'] ) : '';
+		$current_layout       = $this->decode_client_layout( $current_layout_json );
+
+		// Зображення-референс (WP Media) — на БУДЬ-якому повідомленні,
+		// не лише на першому: той самий код для generate і refine.
 		$image = $this->build_reference_image( isset( $_POST['reference_id'] ) ? $_POST['reference_id'] : 0 );
+
+		$turn = array(
+			'role' => 'user',
+			'text' => $current_layout ? $this->build_refine_prompt( $current_layout, $user_prompt ) : $user_prompt,
+		);
 		if ( $image ) {
 			$turn['image'] = $image;
 		}
 
 		$template = $this->ask_gemini( $api_key, array( $turn ) );
 		if ( is_wp_error( $template ) ) {
-			wp_send_json_error( array( 'message' => $template->get_error_message() ), 502 );
+			wp_send_json_error( array( 'message' => $this->friendly_ai_error( $template ) ), 502 );
 		}
 
 		wp_send_json_success( $this->draft_payload( $template, $user_prompt ) );
+	}
+
+	/**
+	 * Обгортка інструкції для ходу-уточнення: явно передає модель поточного
+	 * макета назад разом із запитом на зміну. Саме це — «пам'ять» чату.
+	 *
+	 * @param array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string,editable_fields:array} $current_layout
+	 */
+	private function build_refine_prompt( array $current_layout, string $user_prompt ): string {
+		$layout_json = wp_json_encode( $current_layout, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+
+		return "CURRENT_LAYOUT (JSON, same schema as your output):\n{$layout_json}\n\n"
+			. "USER REQUEST: {$user_prompt}\n\n"
+			. 'Apply ONLY the requested change to CURRENT_LAYOUT and return the COMPLETE updated JSON with the same schema. '
+			. 'Do NOT change trigger_plugin, action_type, or paper_size unless the user explicitly asked to. '
+			. 'Keep every unrelated part of html_template and editable_fields exactly as given.';
+	}
+
+	/**
+	 * Декодує JSON макета, надісланий клієнтом (попередній стан чату),
+	 * і проганяє через ту саму валідацію, що й відповідь AI. Будь-яка
+	 * проблема (порожньо, невалідний JSON, зіпсована структура) —
+	 * трактується як «це перше повідомлення», а не як фатальна помилка:
+	 * чат просто почне генерацію з нуля.
+	 *
+	 * @return array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string,editable_fields:array}|null
+	 */
+	private function decode_client_layout( string $json ): ?array {
+		if ( '' === trim( $json ) ) {
+			return null;
+		}
+
+		$parsed = json_decode( $json, true );
+		if ( ! is_array( $parsed ) ) {
+			return null;
+		}
+
+		$normalized = $this->normalize_template( $parsed );
+		return is_wp_error( $normalized ) ? null : $normalized;
+	}
+
+	/**
+	 * Дружнє повідомлення для чату замість технічної деталі — коли AI
+	 * повернула порожню відповідь або зламаний/неповний JSON. Реальні
+	 * HTTP/мережеві помилки (ключ, ліміти) лишаються як є — вони дієві.
+	 */
+	private function friendly_ai_error( WP_Error $error ): string {
+		$shape_errors = array( 'aipdf_bad_json', 'aipdf_missing_field', 'aipdf_empty_html', 'aipdf_gemini_empty' );
+
+		if ( in_array( $error->get_error_code(), $shape_errors, true ) ) {
+			return __( 'Не вдалося згенерувати структуру. Спробуйте переформулювати запит.', 'ai-pdf-generator' );
+		}
+
+		return $error->get_error_message();
 	}
 
 	/**
@@ -120,52 +190,7 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * КРОК 2 — УТОЧНЕННЯ чернетки. Клієнт надсилає поточний каркас, поля,
-	 * інструкцію та (опційно) історію. Пост НЕ створюється.
-	 */
-	public function handle_refine(): void {
-		$api_key = $this->guard_and_key();
-
-		$instruction = isset( $_POST['instruction'] ) ? sanitize_textarea_field( wp_unslash( $_POST['instruction'] ) ) : '';
-		if ( '' === $instruction ) {
-			wp_send_json_error( array( 'message' => __( 'Опишіть, що змінити.', 'ai-pdf-generator' ) ), 400 );
-		}
-
-		$current_html   = isset( $_POST['html_template'] ) ? wp_kses_post( wp_unslash( $_POST['html_template'] ) ) : '';
-		$current_fields = isset( $_POST['editable_fields'] ) ? json_decode( wp_unslash( $_POST['editable_fields'] ), true ) : array();
-		$current_fields = AIPDF_Fields::normalize( is_array( $current_fields ) ? $current_fields : array() );
-		$base_prompt    = isset( $_POST['base_prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['base_prompt'] ) ) : '';
-
-		// Поточний стан чернетки як JSON — контекст для моделі.
-		$current_json = wp_json_encode(
-			array(
-				'html_template'   => $current_html,
-				'editable_fields' => $current_fields,
-			),
-			JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-		);
-
-		// Багатоходова розмова: початковий запит → поточний макет → уточнення.
-		$contents = array();
-		if ( '' !== $base_prompt ) {
-			$contents[] = array( 'role' => 'user', 'text' => $base_prompt );
-		}
-		$contents[] = array( 'role' => 'model', 'text' => (string) $current_json );
-		$contents[] = array(
-			'role' => 'user',
-			'text' => "This is the CURRENT template. Apply ONLY this change and return the full updated JSON (same schema, keep everything else intact):\n\n" . $instruction,
-		);
-
-		$template = $this->ask_gemini( $api_key, $contents );
-		if ( is_wp_error( $template ) ) {
-			wp_send_json_error( array( 'message' => $template->get_error_message() ), 502 );
-		}
-
-		wp_send_json_success( $this->draft_payload( $template, $base_prompt ) );
-	}
-
-	/**
-	 * КРОК 3 — ЗБЕРЕЖЕННЯ фіналізованої чернетки як CPT.
+	 * ЗБЕРЕЖЕННЯ фіналізованої чернетки як CPT.
 	 */
 	public function handle_save(): void {
 		check_ajax_referer( 'aipdf_generate', 'nonce' );
@@ -228,7 +253,7 @@ class AIPDF_Ajax_Handler {
 					'Невалідна відповідь Gemini (%s): %s Початок відповіді: %s',
 					$template->get_error_code(),
 					$template->get_error_message(),
-					mb_substr( $ai_response, 0, 200 )
+					mb_substr( $ai_response, 0, 500 )
 				)
 			);
 		}
@@ -252,6 +277,9 @@ class AIPDF_Ajax_Handler {
 			'paper_size'      => $template['paper_size'],
 			'html_template'   => $template['html_template'],
 			'editable_fields' => $template['editable_fields'],
+			// Клієнт зберігає це ДОСЛІВНО і надсилає назад із наступним
+			// повідомленням чату — єдине джерело «пам'яті» стану.
+			'current_layout'  => wp_json_encode( $template, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
 			// Готове превю: каркас + значення полів + демо-дані.
 			'preview_html'    => AIPDF_PDF_Renderer::substitute(
 				$template['html_template'],
@@ -272,6 +300,49 @@ class AIPDF_Ajax_Handler {
 	 * @param array<int, array{role:string,text:string}> $contents Ходи розмови.
 	 * @return string|WP_Error Сирий текст відповіді моделі.
 	 */
+	/**
+	 * Строга JSON-схема відповіді (Gemini structured output). Обмежує
+	 * `trigger_plugin` тим самим динамічним переліком доступних тригерів,
+	 * що й система показує в промпті, — модель фізично не зможе повернути
+	 * тригер вимкненого плагіна чи зламати форму editable_fields.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function response_schema(): array {
+		return array(
+			'type'       => 'OBJECT',
+			'properties' => array(
+				'trigger_plugin' => array(
+					'type' => 'STRING',
+					'enum' => AIPDF_Triggers::available(),
+				),
+				'action_type'    => array(
+					'type' => 'STRING',
+					'enum' => array( 'attach_to_email', 'download_link' ),
+				),
+				'paper_size'     => array( 'type' => 'STRING' ),
+				'html_template'  => array( 'type' => 'STRING' ),
+				'editable_fields' => array(
+					'type'  => 'ARRAY',
+					'items' => array(
+						'type'       => 'OBJECT',
+						'properties' => array(
+							'key'   => array( 'type' => 'STRING' ),
+							'type'  => array(
+								'type' => 'STRING',
+								'enum' => array( 'color', 'text', 'textarea' ),
+							),
+							'label' => array( 'type' => 'STRING' ),
+							'value' => array( 'type' => 'STRING' ),
+						),
+						'required' => array( 'key', 'type', 'label', 'value' ),
+					),
+				),
+			),
+			'required'   => array( 'trigger_plugin', 'action_type', 'paper_size', 'html_template', 'editable_fields' ),
+		);
+	}
+
 	private function request_gemini( string $api_key, array $contents ) {
 		// Модель — з налаштувань (захист від deprecation у Google),
 		// фільтр залишається для програмного перевизначення.
@@ -310,8 +381,12 @@ class AIPDF_Ajax_Handler {
 			),
 			'contents'           => $mapped,
 			'generationConfig'   => array(
-				// Просимо модель віддавати строго JSON.
+				// response_mime_type сам собою лише «просить» JSON-подібний текст —
+				// на практиці Gemini подеколи повертає синтаксично зламаний JSON
+				// (напр. зайву закриваючу дужку). response_schema змушує API
+				// гарантувати структурно коректний JSON саме цієї форми.
 				'response_mime_type' => 'application/json',
+				'response_schema'    => $this->response_schema(),
 				'temperature'        => 0.4,
 				'maxOutputTokens'    => 16384,
 				// Thinking вимкнено: для генерації шаблону воно зайве,
@@ -516,7 +591,9 @@ TRIGGER RULES (trigger_plugin) — pick EXACTLY ONE key from this list of AVAILA
 
 Return the trigger key verbatim (e.g. "woocommerce_payment_complete"). If nothing fits, use "manual_generation". Allowed keys: {$trigger_keys}.
 
-REFERENCE IMAGE: if an image is attached, treat it as a visual reference — replicate its layout, structure, color scheme and overall style as closely as possible within the table-based HTML constraints. Turn its colors/titles into editable_fields.
+REFERENCE IMAGE: if an image is attached, treat it as a visual reference — replicate its layout, structure, color scheme and overall style as closely as possible within the table-based HTML constraints. Turn its colors/titles into editable_fields. This applies on ANY turn, not just the first message — if the user attaches a new reference while refining an existing layout, incorporate it into the update too.
+
+CHAT / REFINEMENT MODE: the user message may start with "CURRENT_LAYOUT (JSON, same schema as your output):" followed by the existing layout and a "USER REQUEST:" line. When you see this, you are editing an EXISTING template, not starting fresh — apply only the requested change and return the complete updated JSON in the exact same schema, preserving everything not explicitly asked to change.
 
 HTML RULES (html_template):
 1. Only basic HTML with inline CSS (style="...").

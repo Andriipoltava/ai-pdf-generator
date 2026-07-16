@@ -1,17 +1,18 @@
 /**
- * AI PDF Generator — Playground.
- * Надсилає запит у AJAX-обробник і показує результат.
+ * AI PDF Generator — Playground як чат із живим прев'ю.
+ *
+ * Стан розмови — це НЕ список повідомлень, а один об'єкт `chat.layout`
+ * (поточний макет: trigger_plugin/action_type/paper_size/html_template/
+ * editable_fields). Кожне повідомлення (перше й будь-яке уточнення)
+ * надсилає цей макет назад на сервер разом із новим текстом — це і є
+ * «пам'ять» чату. Прев'ю та поля оновлюються ЛИШЕ після успішної відповіді;
+ * при помилці попередній стан лишається недоторканим, а в чат додається
+ * повідомлення про помилку.
  */
 ( function ( $ ) {
 	'use strict';
 
 	$( function () {
-		var $btn     = $( '#aipdf-generate-btn' ),
-			$prompt  = $( '#aipdf-prompt' ),
-			$spinner = $( '#aipdf-spinner' ),
-			$result  = $( '#aipdf-result' ),
-			$error   = $( '#aipdf-error' );
-
 		// ---------- Вкладки (nav-tab) ----------
 		function activateTab( name ) {
 			if ( ! $( '#aipdf-tab-' + name ).length ) {
@@ -88,12 +89,87 @@
 			} );
 		}() );
 
-		// ---------- Референс-зображення для Playground ----------
+		// ==================== ЧАТ (Playground) ====================
+
+		var $history   = $( '#aipdf-chat-history' ),
+			$input     = $( '#aipdf-chat-input' ),
+			$sendBtn   = $( '#aipdf-chat-send' ),
+			$refId     = $( '#aipdf-ref-id' ),
+			$refPrev   = $( '#aipdf-ref-preview' ),
+			$refRemove = $( '#aipdf-ref-remove' ),
+			$refHint   = $( '#aipdf-ref-hint' ),
+			$preview   = $( '#aipdf-preview' ),
+			$previewPh = $( '#aipdf-preview-placeholder' ),
+			$fields    = $( '#aipdf-chat-fields' ),
+			$metaWrap  = $( '#aipdf-chat-meta' ),
+			$metaLine  = $( '#aipdf-meta-line' ),
+			$saveBtn   = $( '#aipdf-save-btn' ),
+			$saved     = $( '#aipdf-saved' ),
+			i18n       = aipdfData.i18n || {},
+			sample     = aipdfData.sample || {};
+
+		if ( ! $history.length ) {
+			return; // Не Playground-вкладка (захист від подвійної ініціалізації в інших контекстах).
+		}
+
+		// Єдиний стан чату: поточний макет + JSON, який сервер повернув
+		// останнім і який ми надсилаємо назад без змін на наступному ході.
+		var chat = {
+			layout:     null,
+			layoutJson: '',
+			basePrompt: '',
+			busy:       false
+		};
+
+		function escapeHtml( str ) {
+			return $( '<div/>' ).text( str == null ? '' : str ).html();
+		}
+
+		function scrollHistoryToBottom() {
+			$history.scrollTop( $history.get( 0 ).scrollHeight );
+		}
+
+		/**
+		 * Додає бульбашку в історію чату.
+		 *
+		 * @param {string} role user | ai | error | pending
+		 * @param {string} html Вже екранований HTML для вставки.
+		 * @return {jQuery} Створений елемент (щоб pending-бульбашку можна було прибрати).
+		 */
+		function appendMessage( role, html ) {
+			var $bubble = $( '<div/>' )
+				.addClass( 'aipdf-chat-msg aipdf-chat-msg-' + role )
+				.css( {
+					margin:       '0 0 10px',
+					padding:      '8px 12px',
+					borderRadius: '6px',
+					fontSize:     '13px',
+					lineHeight:   '1.5',
+					maxWidth:     '92%',
+					whiteSpace:   'pre-wrap',
+					wordBreak:    'break-word'
+				} );
+
+			if ( 'user' === role ) {
+				$bubble.css( { background: '#2271b1', color: '#fff', marginLeft: 'auto' } );
+			} else if ( 'error' === role ) {
+				$bubble.css( { background: '#fcf0f1', color: '#8a2424', border: '1px solid #f5c2c2' } );
+			} else if ( 'pending' === role ) {
+				$bubble.css( { background: '#f0f0f1', color: '#646970', fontStyle: 'italic' } );
+			} else {
+				$bubble.css( { background: '#f0f0f1', color: '#1d2327' } );
+			}
+
+			$bubble.html( html );
+			$history.append( $bubble );
+			scrollHistoryToBottom();
+
+			return $bubble;
+		}
+
+		// ---------- Референс-зображення (прикріплюється до наступного повідомлення) ----------
 		( function () {
-			var frame,
-				$id      = $( '#aipdf-ref-id' ),
-				$preview = $( '#aipdf-ref-preview' ),
-				$remove  = $( '#aipdf-ref-remove' );
+			var frame;
 
 			$( '#aipdf-ref-upload' ).on( 'click', function ( e ) {
 				e.preventDefault();
@@ -109,33 +185,38 @@
 				} );
 				frame.on( 'select', function () {
 					var att = frame.state().get( 'selection' ).first().toJSON();
-					$id.val( att.id );
-					$preview.attr( 'src', att.url ).show();
-					$remove.show();
+					$refId.val( att.id );
+					$refPrev.attr( 'src', att.url ).show();
+					$refRemove.show();
+					$refHint.show();
 				} );
 				frame.open();
 			} );
 
-			$remove.on( 'click', function ( e ) {
+			$refRemove.on( 'click', function ( e ) {
 				e.preventDefault();
-				$id.val( '' );
-				$preview.attr( 'src', '' ).hide();
-				$( this ).hide();
+				clearReference();
 			} );
 		}() );
 
-		// ---------- Швидкий старт: готові промпти ----------
+		function clearReference() {
+			$refId.val( '' );
+			$refPrev.attr( 'src', '' ).hide();
+			$refHint.hide();
+			$refRemove.hide();
+		}
+
+		// ---------- Плейсхолдери та швидкий старт — вставляють у поле чату ----------
 		$( '#aipdf-quickstart' ).on( 'change', function () {
 			var text = $( this ).val();
 			if ( text ) {
-				$prompt.val( text ).trigger( 'focus' );
+				$input.val( text ).trigger( 'focus' );
 			}
 		} );
 
-		// Клік по плейсхолдеру: вставка в textarea на позицію курсора.
 		$( document ).on( 'click', '.aipdf-ph', function () {
 			var tag = $( this ).data( 'ph' ),
-				ta  = $prompt.get( 0 ),
+				ta  = $input.get( 0 ),
 				start, end, value;
 
 			if ( ! ta || ! tag ) {
@@ -147,175 +228,267 @@
 			end   = 'number' === typeof ta.selectionEnd ? ta.selectionEnd : value.length;
 
 			ta.value = value.slice( 0, start ) + tag + value.slice( end );
-
-			// Курсор — одразу після вставленого тега.
 			ta.selectionStart = ta.selectionEnd = start + tag.length;
 			ta.focus();
 
-			// Коротка візуальна реакція на клік.
 			$( this ).css( 'background', '#c3e6cb' );
 			setTimeout( function ( el ) {
 				$( el ).css( 'background', '' );
 			}, 350, this );
 		} );
 
-		function showError( message ) {
-			$error.find( 'p' ).text( message );
-			$error.show();
+		// ---------- Живе клієнтське превю: підстановка {{key}} без AJAX ----------
+		function fillPlaceholders( html, fieldValues ) {
+			var data = $.extend( {}, sample, fieldValues );
+			return html.replace( /\{\{\s*([a-z0-9_]+)\s*\}\}/gi, function ( match, key ) {
+				var value = data[ key.toLowerCase() ];
+				return ( 'undefined' === typeof value ) ? '' : value;
+			} );
 		}
 
-		function failHandler( xhr ) {
-			var message = aipdfData.i18n.error;
-			if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
-				message = xhr.responseJSON.data.message;
+		function currentFieldValues() {
+			var map = {};
+			if ( chat.layout && chat.layout.editable_fields ) {
+				chat.layout.editable_fields.forEach( function ( f ) {
+					map[ String( f.key ).toLowerCase() ] = f.value;
+				} );
 			}
-			showError( message );
+			return map;
 		}
 
-		// Поточна чернетка (не збережена в БД до кнопки «Зберегти шаблон»).
-		var currentDraft = null;
+		function renderPreview() {
+			if ( ! chat.layout ) {
+				return;
+			}
+			var html = fillPlaceholders( chat.layout.html_template, currentFieldValues() );
+			$preview.attr( 'srcdoc', '<base target="_blank">' + html );
+			$preview.show();
+			$previewPh.hide();
+		}
 
-		var $refine        = $( '#aipdf-refine' ),
-			$refineBtn     = $( '#aipdf-refine-btn' ),
-			$saveBtn       = $( '#aipdf-save-btn' ),
-			$refineSpinner = $( '#aipdf-refine-spinner' ),
-			$saved         = $( '#aipdf-saved' ),
-			$history       = $( '#aipdf-history' );
+		// ---------- Динамічні поля editable_fields (кольори/тексти) ----------
+		function updateFieldValue( idx, value ) {
+			if ( chat.layout && chat.layout.editable_fields && chat.layout.editable_fields[ idx ] ) {
+				chat.layout.editable_fields[ idx ].value = value;
+				renderPreview();
+			}
+		}
 
-		function applyDraft( d ) {
-			currentDraft = {
-				html_template:   d.html_template,
-				editable_fields: d.editable_fields || [],
+		function renderFields() {
+			$fields.empty();
+
+			if ( ! chat.layout || ! chat.layout.editable_fields || ! chat.layout.editable_fields.length ) {
+				return;
+			}
+
+			chat.layout.editable_fields.forEach( function ( field, idx ) {
+				var $row   = $( '<div/>' ).css( { marginBottom: '10px' } ),
+					fieldId = 'aipdf-cf-' + idx,
+					$label = $( '<label/>', { text: field.label, 'for': fieldId } )
+						.css( { display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '3px' } ),
+					$control;
+
+				$row.append( $label );
+
+				if ( 'color' === field.type ) {
+					$control = $( '<input/>', { type: 'text', id: fieldId, value: field.value } ).addClass( 'aipdf-cf aipdf-cf-color' );
+				} else if ( 'textarea' === field.type ) {
+					$control = $( '<textarea/>', { id: fieldId, rows: 2 } ).addClass( 'large-text aipdf-cf' ).val( field.value );
+				} else {
+					$control = $( '<input/>', { type: 'text', id: fieldId, value: field.value } ).addClass( 'regular-text aipdf-cf' );
+				}
+
+				$control.data( 'field-index', idx );
+				$row.append( $control );
+				$fields.append( $row );
+
+				if ( 'color' === field.type && $.fn.wpColorPicker ) {
+					$control.wpColorPicker( {
+						change: function ( event, ui ) {
+							updateFieldValue( idx, ui.color.toString() );
+						},
+						clear: function () {
+							updateFieldValue( idx, '' );
+						}
+					} );
+				}
+			} );
+		}
+
+		$( document ).on( 'input', '.aipdf-cf:not(.aipdf-cf-color)', function () {
+			updateFieldValue( $( this ).data( 'field-index' ), $( this ).val() );
+		} );
+
+		function actionLabel( actionType ) {
+			return 'attach_to_email' === actionType
+				? ( i18n.actionEmail || actionType )
+				: ( i18n.actionDl || actionType );
+		}
+
+		function updateMeta() {
+			if ( ! chat.layout ) {
+				$metaWrap.hide();
+				return;
+			}
+			$metaLine.text(
+				chat.layout.trigger_plugin + ' · ' + actionLabel( chat.layout.action_type ) + ' · ' + chat.layout.paper_size
+			);
+			$metaWrap.show();
+		}
+
+		/**
+		 * Застосовує УСПІШНУ відповідь сервера як новий стан чату.
+		 * Викликається лише при success — інакше попередній стан незмінний.
+		 */
+		function applyLayout( d ) {
+			chat.layout = {
 				trigger_plugin:  d.trigger_plugin,
 				action_type:     d.action_type,
 				paper_size:      d.paper_size,
-				base_prompt:     d.base_prompt || ''
+				html_template:   d.html_template,
+				editable_fields: d.editable_fields || []
 			};
-			$( '#aipdf-res-trigger' ).text( d.trigger_plugin );
-			$( '#aipdf-res-action' ).text( d.action_type );
-			$( '#aipdf-res-paper' ).text( d.paper_size );
-			$( '#aipdf-preview' ).attr( 'srcdoc', '<base target="_blank">' + ( d.preview_html || d.html_template ) );
-			// Повертаємось у стан «чернетка».
+			// Дослівний JSON із сервера — саме його надсилаємо назад наступного разу.
+			chat.layoutJson = d.current_layout || JSON.stringify( chat.layout );
+
+			renderPreview();
+			renderFields();
+			updateMeta();
+
+			$saveBtn.show();
 			$saved.hide();
-			$( '#aipdf-draft-badge' ).show();
-			$result.show();
 		}
 
-		function addHistory( text ) {
-			$( '<li/>', { text: text } ).appendTo( $history );
+		function setBusy( on ) {
+			chat.busy = on;
+			$sendBtn.prop( 'disabled', on ).text( on ? i18n.sending : i18n.send );
+			$input.prop( 'disabled', on );
 		}
 
-		function busy( on ) {
-			$refineBtn.prop( 'disabled', on );
-			$saveBtn.prop( 'disabled', on );
-			$refineSpinner.toggleClass( 'is-active', on );
-		}
-
-		// --- КРОК 1: генерація ЧЕРНЕТКИ (без збереження) ---
-		$btn.on( 'click', function () {
-			var prompt = $.trim( $prompt.val() );
-			$error.hide();
-			$result.hide();
-			$history.empty();
-
-			if ( ! prompt ) {
-				showError( aipdfData.i18n.emptyInput );
+		function sendMessage() {
+			if ( chat.busy ) {
 				return;
 			}
 
-			$btn.prop( 'disabled', true ).text( aipdfData.i18n.generating );
-			$spinner.addClass( 'is-active' );
+			var text = $.trim( $input.val() );
+			if ( ! text ) {
+				appendMessage( 'error', escapeHtml( i18n.emptyInput ) );
+				return;
+			}
+
+			var refId    = $refId.val(),
+				userLine = '<strong>' + escapeHtml( i18n.you ) + ':</strong> ' + escapeHtml( text );
+
+			if ( refId ) {
+				userLine += '<br/><img src="' + escapeHtml( $refPrev.attr( 'src' ) || '' ) + '" style="max-height:60px;margin-top:4px;border:1px solid rgba(255,255,255,.5);border-radius:3px;" />';
+			}
+			appendMessage( 'user', userLine );
+
+			var $pending = appendMessage( 'pending', escapeHtml( i18n.assistant ) + '…' );
+
+			if ( ! chat.basePrompt ) {
+				chat.basePrompt = text;
+			}
+
+			setBusy( true );
 
 			$.post( aipdfData.ajaxUrl, {
-				action:       'aipdf_generate',
-				nonce:        aipdfData.nonce,
-				prompt:       prompt,
-				reference_id: $( '#aipdf-ref-id' ).val() || ''
+				action:         'aipdf_chat',
+				nonce:          aipdfData.nonce,
+				prompt:         text,
+				current_layout: chat.layoutJson || '',
+				reference_id:   refId || ''
 			} )
 				.done( function ( response ) {
+					$pending.remove();
+
 					if ( ! response || ! response.success ) {
-						showError( ( response && response.data && response.data.message ) || aipdfData.i18n.error );
+						// НЕ чіпаємо layout/preview/fields — лише повідомлення в чат.
+						appendMessage( 'error', escapeHtml( ( response && response.data && response.data.message ) || i18n.error ) );
 						return;
 					}
-					applyDraft( response.data );
-					addHistory( 'Запит: ' + prompt );
+
+					applyLayout( response.data );
+					appendMessage(
+						'ai',
+						escapeHtml(
+							( i18n.updatedMsg || 'Готово: %1$s / %2$s / %3$s' )
+								.replace( '%1$s', response.data.trigger_plugin )
+								.replace( '%2$s', actionLabel( response.data.action_type ) )
+								.replace( '%3$s', response.data.paper_size )
+						)
+					);
 				} )
-				.fail( failHandler )
-				.always( function () {
-					$btn.prop( 'disabled', false ).text( 'Згенерувати' );
-					$spinner.removeClass( 'is-active' );
-				} );
-		} );
-
-		// --- КРОК 2: УТОЧНЕННЯ чернетки ---
-		$refineBtn.on( 'click', function () {
-			if ( ! currentDraft ) {
-				return;
-			}
-			var instruction = $.trim( $refine.val() );
-			$error.hide();
-			if ( ! instruction ) {
-				showError( aipdfData.i18n.emptyRefine );
-				return;
-			}
-
-			busy( true );
-			$.post( aipdfData.ajaxUrl, {
-				action:          'aipdf_refine',
-				nonce:           aipdfData.nonce,
-				instruction:     instruction,
-				base_prompt:     currentDraft.base_prompt,
-				html_template:   currentDraft.html_template,
-				editable_fields: JSON.stringify( currentDraft.editable_fields )
-			} )
-				.done( function ( response ) {
-					if ( ! response || ! response.success ) {
-						showError( ( response && response.data && response.data.message ) || aipdfData.i18n.error );
-						return;
+				.fail( function ( xhr ) {
+					$pending.remove();
+					var message = i18n.error;
+					if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+						message = xhr.responseJSON.data.message;
 					}
-					applyDraft( response.data );
-					addHistory( 'Уточнення: ' + instruction );
-					$refine.val( '' );
+					// І тут теж НЕ чіпаємо попередній стан.
+					appendMessage( 'error', escapeHtml( message ) );
 				} )
-				.fail( failHandler )
 				.always( function () {
-					busy( false );
+					setBusy( false );
+					// Референс — одноразовий: додається лише до щойно відправленого
+					// повідомлення, для наступного треба прикріпити знову.
+					clearReference();
+					$input.val( '' ).trigger( 'focus' );
 				} );
+		}
+
+		$sendBtn.on( 'click', sendMessage );
+		$input.on( 'keydown', function ( e ) {
+			if ( 13 === e.which && ! e.shiftKey ) {
+				e.preventDefault();
+				sendMessage();
+			}
 		} );
 
-		// --- КРОК 3: ЗБЕРЕЖЕННЯ чернетки як CPT ---
+		// ---------- Зберегти шаблон (фіналізація поточного макета як CPT) ----------
 		$saveBtn.on( 'click', function () {
-			if ( ! currentDraft ) {
+			if ( ! chat.layout ) {
 				return;
 			}
-			$error.hide();
-			busy( true );
+
+			$saveBtn.prop( 'disabled', true );
+
 			$.post( aipdfData.ajaxUrl, {
 				action:          'aipdf_save',
 				nonce:           aipdfData.nonce,
-				prompt:          currentDraft.base_prompt,
-				trigger_plugin:  currentDraft.trigger_plugin,
-				action_type:     currentDraft.action_type,
-				paper_size:      currentDraft.paper_size,
-				html_template:   currentDraft.html_template,
-				editable_fields: JSON.stringify( currentDraft.editable_fields )
+				prompt:          chat.basePrompt,
+				trigger_plugin:  chat.layout.trigger_plugin,
+				action_type:     chat.layout.action_type,
+				paper_size:      chat.layout.paper_size,
+				html_template:   chat.layout.html_template,
+				editable_fields: JSON.stringify( chat.layout.editable_fields )
 			} )
 				.done( function ( response ) {
 					if ( ! response || ! response.success ) {
-						showError( ( response && response.data && response.data.message ) || aipdfData.i18n.error );
+						appendMessage( 'error', escapeHtml( ( response && response.data && response.data.message ) || i18n.error ) );
 						return;
 					}
 					var d = response.data;
-					$( '#aipdf-saved-msg' ).text( ( aipdfData.i18n.saved || 'Збережено' ) + ' (#' + d.post_id + ').' );
+					$( '#aipdf-saved-msg' ).text( ( i18n.saved || 'Збережено' ) + ' (#' + d.post_id + ').' );
 					$( '#aipdf-edit-link' ).attr( 'href', d.edit_link );
 					$( '#aipdf-test-pdf-link' ).attr( 'href', d.test_pdf_url ).toggle( !! d.pdf_available );
-					$( '#aipdf-draft-badge' ).hide();
 					$saved.show();
 				} )
-				.fail( failHandler )
+				.fail( function ( xhr ) {
+					var message = i18n.error;
+					if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+						message = xhr.responseJSON.data.message;
+					}
+					appendMessage( 'error', escapeHtml( message ) );
+				} )
 				.always( function () {
-					busy( false );
+					$saveBtn.prop( 'disabled', false );
 				} );
 		} );
+
+		// Привітальне повідомлення чату.
+		if ( i18n.welcomeMsg ) {
+			appendMessage( 'ai', escapeHtml( i18n.welcomeMsg ) );
+		}
 	} );
 }( jQuery ) );

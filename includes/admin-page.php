@@ -244,14 +244,15 @@ class AIPDF_Admin_Page {
 			return;
 		}
 
-		// Медіатека для вибору логотипу.
+		// Медіатека (лого, референс) + WP Color Picker (динамічні поля-кольори чату).
 		wp_enqueue_media();
+		wp_enqueue_style( 'wp-color-picker' );
 
 		wp_enqueue_script(
 			'aipdf-admin',
 			AIPDF_PLUGIN_URL . 'assets/admin.js',
-			array( 'jquery' ),
-			AIPDF_VERSION,
+			array( 'jquery', 'wp-color-picker' ),
+			AIPDF_Plugin::asset_version( 'assets/admin.js' ),
 			true
 		);
 
@@ -261,12 +262,21 @@ class AIPDF_Admin_Page {
 			array(
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'aipdf_generate' ),
+				// Демо-дані для клієнтського live-превю чату (той самий набір,
+				// що й у рендері PDF та в редакторі шаблону).
+				'sample'  => AIPDF_PDF_Renderer::sample_data(),
 				'i18n'    => array(
-					'generating'  => __( 'Генерація… (може тривати до 30 сек)', 'ai-pdf-generator' ),
-					'error'       => __( 'Сталася помилка. Спробуйте ще раз.', 'ai-pdf-generator' ),
-					'emptyInput'  => __( 'Опишіть, який документ потрібен.', 'ai-pdf-generator' ),
-					'emptyRefine' => __( 'Опишіть, що змінити.', 'ai-pdf-generator' ),
-					'saved'       => __( 'Шаблон збережено', 'ai-pdf-generator' ),
+					'sending'      => __( 'Надсилання…', 'ai-pdf-generator' ),
+					'send'         => __( 'Відправити', 'ai-pdf-generator' ),
+					'error'        => __( 'Сталася помилка. Спробуйте ще раз.', 'ai-pdf-generator' ),
+					'emptyInput'   => __( 'Введіть повідомлення.', 'ai-pdf-generator' ),
+					'saved'        => __( 'Шаблон збережено', 'ai-pdf-generator' ),
+					'you'          => __( 'Ви', 'ai-pdf-generator' ),
+					'assistant'    => __( 'AI', 'ai-pdf-generator' ),
+					'updatedMsg'   => __( 'Готово. Тригер: %1$s · Дія: %2$s · Формат: %3$s.', 'ai-pdf-generator' ),
+					'actionEmail'  => __( 'лист із вкладенням', 'ai-pdf-generator' ),
+					'actionDl'     => __( 'посилання на завантаження', 'ai-pdf-generator' ),
+					'welcomeMsg'   => __( 'Опишіть документ, який потрібно згенерувати, або почніть із готового прикладу нижче.', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -314,88 +324,93 @@ class AIPDF_Admin_Page {
 				<a href="#logs" class="nav-tab" data-tab="logs"><?php esc_html_e( 'Журнал подій', 'ai-pdf-generator' ); ?></a>
 			</h2>
 
-			<!-- ============ Вкладка 1: Генератор ============ -->
+			<!-- ============ Вкладка 1: Генератор (чат) ============ -->
 			<div id="aipdf-tab-playground" class="aipdf-tab" style="padding-top:16px;">
-				<p><?php esc_html_e( 'Опишіть документ, який потрібно згенерувати, або почніть із готового прикладу.', 'ai-pdf-generator' ); ?></p>
 
-				<p>
-					<label for="aipdf-quickstart"><strong><?php esc_html_e( 'Швидкий старт:', 'ai-pdf-generator' ); ?></strong></label><br />
-					<select id="aipdf-quickstart" style="max-width:600px;width:100%;margin-top:4px;">
-						<option value=""><?php esc_html_e( '-- Виберіть готовий приклад --', 'ai-pdf-generator' ); ?></option>
-						<?php foreach ( $quickstart_prompts as $label => $prompt_text ) : ?>
-							<option value="<?php echo esc_attr( $prompt_text ); ?>"><?php echo esc_html( $label ); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</p>
+				<div class="aipdf-chat-layout" style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;">
 
-				<div class="aipdf-placeholders" style="margin:0 0 10px 0;padding:12px 16px;background:#f6f7f7;border:1px solid #ccd0d4;border-radius:4px;max-width:800px;">
-					<strong style="display:block;margin-bottom:8px;"><?php esc_html_e( 'Доступні змінні (Плейсхолдери) — клікніть, щоб вставити у запит:', 'ai-pdf-generator' ); ?></strong>
-					<?php foreach ( $placeholder_groups as $group_label => $tags ) : ?>
-						<p style="margin:4px 0;">
-							<span style="display:inline-block;min-width:160px;color:#646970;font-size:12px;"><?php echo esc_html( $group_label ); ?>:</span>
-							<?php foreach ( $tags as $tag ) : ?>
-								<code
-									class="aipdf-ph"
-									data-ph="<?php echo esc_attr( $tag ); ?>"
-									title="<?php esc_attr_e( 'Клікніть, щоб вставити в запит', 'ai-pdf-generator' ); ?>"
-									style="cursor:pointer;margin:2px 4px 2px 0;padding:3px 8px;display:inline-block;border-radius:3px;"
-								><?php echo esc_html( $tag ); ?></code>
-							<?php endforeach; ?>
-						</p>
-					<?php endforeach; ?>
-				</div>
+					<!-- Ліва колонка: чат -->
+					<div class="aipdf-chat-col" style="flex:1 1 420px;min-width:340px;max-width:560px;">
 
-				<textarea id="aipdf-prompt" rows="5" class="large-text" placeholder="<?php esc_attr_e( 'Ваш запит…', 'ai-pdf-generator' ); ?>"></textarea>
-
-				<p style="margin:8px 0;">
-					<input type="hidden" id="aipdf-ref-id" value="" />
-					<button type="button" class="button" id="aipdf-ref-upload"><?php esc_html_e( 'Прикріпити референс-зображення', 'ai-pdf-generator' ); ?></button>
-					<button type="button" class="button" id="aipdf-ref-remove" style="display:none;"><?php esc_html_e( 'Прибрати', 'ai-pdf-generator' ); ?></button>
-					<img id="aipdf-ref-preview" src="" alt="" style="display:none;max-height:56px;vertical-align:middle;margin-left:8px;border:1px solid #ddd;padding:2px;background:#fff;" />
-					<span class="description" style="display:block;margin-top:4px;"><?php esc_html_e( 'Необов’язково: додайте зразок дизайну (PNG/JPG/WEBP, до 5 МБ) — AI відтворить його макет, кольори та стиль.', 'ai-pdf-generator' ); ?></span>
-				</p>
-
-				<p>
-					<button type="button" class="button button-primary" id="aipdf-generate-btn">
-						<?php esc_html_e( 'Згенерувати', 'ai-pdf-generator' ); ?>
-					</button>
-					<span class="spinner" id="aipdf-spinner" style="float:none;"></span>
-				</p>
-
-				<div id="aipdf-result" style="display:none;">
-					<h3><?php esc_html_e( 'Чернетка шаблону', 'ai-pdf-generator' ); ?> <span id="aipdf-draft-badge" style="font-size:12px;font-weight:normal;color:#b26900;background:#fcf3e6;padding:2px 8px;border-radius:3px;vertical-align:middle;"><?php esc_html_e( 'не збережено', 'ai-pdf-generator' ); ?></span></h3>
-					<table class="widefat striped" style="max-width:700px;">
-						<tbody>
-							<tr><td style="width:140px;"><strong>trigger_plugin</strong></td><td id="aipdf-res-trigger"></td></tr>
-							<tr><td><strong>action_type</strong></td><td id="aipdf-res-action"></td></tr>
-							<tr><td><strong>paper_size</strong></td><td id="aipdf-res-paper"></td></tr>
-						</tbody>
-					</table>
-
-					<h4><?php esc_html_e( 'Попередній перегляд', 'ai-pdf-generator' ); ?></h4>
-					<iframe id="aipdf-preview" style="width:100%;max-width:820px;height:450px;border:1px solid #ccd0d4;background:#fff;" sandbox=""></iframe>
-
-					<div id="aipdf-refine-wrap" style="margin-top:16px;max-width:820px;">
-						<label for="aipdf-refine"><strong><?php esc_html_e( 'Уточнити (Refine):', 'ai-pdf-generator' ); ?></strong></label>
-						<textarea id="aipdf-refine" rows="2" class="large-text" placeholder="<?php esc_attr_e( 'Напр.: зроби заголовок більшим і синім, додай рамку навколо документа', 'ai-pdf-generator' ); ?>"></textarea>
 						<p>
-							<button type="button" class="button" id="aipdf-refine-btn"><?php esc_html_e( 'Уточнити', 'ai-pdf-generator' ); ?></button>
-							<button type="button" class="button button-primary button-hero" id="aipdf-save-btn" style="margin-left:8px;"><?php esc_html_e( 'Зберегти шаблон', 'ai-pdf-generator' ); ?></button>
-							<span class="spinner" id="aipdf-refine-spinner" style="float:none;"></span>
+							<label for="aipdf-quickstart"><strong><?php esc_html_e( 'Швидкий старт:', 'ai-pdf-generator' ); ?></strong></label><br />
+							<select id="aipdf-quickstart" style="width:100%;margin-top:4px;">
+								<option value=""><?php esc_html_e( '-- Виберіть готовий приклад --', 'ai-pdf-generator' ); ?></option>
+								<?php foreach ( $quickstart_prompts as $label => $prompt_text ) : ?>
+									<option value="<?php echo esc_attr( $prompt_text ); ?>"><?php echo esc_html( $label ); ?></option>
+								<?php endforeach; ?>
+							</select>
 						</p>
-						<ul id="aipdf-history" style="margin:8px 0;padding-left:18px;color:#646970;font-size:12px;list-style:disc;"></ul>
+
+						<div class="aipdf-placeholders" style="margin:0 0 10px 0;padding:10px 12px;background:#f6f7f7;border:1px solid #ccd0d4;border-radius:4px;">
+							<strong style="display:block;margin-bottom:6px;font-size:12px;"><?php esc_html_e( 'Плейсхолдери — клік вставляє в поле вводу:', 'ai-pdf-generator' ); ?></strong>
+							<?php foreach ( $placeholder_groups as $group_label => $tags ) : ?>
+								<p style="margin:3px 0;">
+									<span style="display:inline-block;min-width:110px;color:#646970;font-size:11px;"><?php echo esc_html( $group_label ); ?>:</span>
+									<?php foreach ( $tags as $tag ) : ?>
+										<code
+											class="aipdf-ph"
+											data-ph="<?php echo esc_attr( $tag ); ?>"
+											title="<?php esc_attr_e( 'Клікніть, щоб вставити в повідомлення', 'ai-pdf-generator' ); ?>"
+											style="cursor:pointer;margin:2px 3px 2px 0;padding:2px 6px;display:inline-block;border-radius:3px;font-size:11px;"
+										><?php echo esc_html( $tag ); ?></code>
+									<?php endforeach; ?>
+								</p>
+							<?php endforeach; ?>
+						</div>
+
+						<!-- Історія чату -->
+						<div id="aipdf-chat-history" style="border:1px solid #ccd0d4;border-radius:4px;background:#fff;height:380px;overflow-y:auto;padding:12px;margin-bottom:8px;"></div>
+
+						<!-- Референс-зображення (прикріплюється до наступного повідомлення) -->
+						<p style="margin:0 0 6px;">
+							<input type="hidden" id="aipdf-ref-id" value="" />
+							<button type="button" class="button button-small" id="aipdf-ref-upload"><?php esc_html_e( '📎 Референс-зображення', 'ai-pdf-generator' ); ?></button>
+							<button type="button" class="button button-small" id="aipdf-ref-remove" style="display:none;"><?php esc_html_e( 'Прибрати', 'ai-pdf-generator' ); ?></button>
+							<img id="aipdf-ref-preview" src="" alt="" style="display:none;max-height:32px;vertical-align:middle;margin-left:6px;border:1px solid #ddd;padding:1px;background:#fff;" />
+							<span id="aipdf-ref-hint" class="description" style="display:none;margin-left:6px;font-size:11px;"><?php esc_html_e( 'додасться до наступного повідомлення', 'ai-pdf-generator' ); ?></span>
+						</p>
+
+						<!-- Поле вводу + відправка -->
+						<div style="display:flex;gap:8px;align-items:flex-end;">
+							<textarea id="aipdf-chat-input" rows="2" class="large-text" style="flex:1;" placeholder="<?php esc_attr_e( 'Опишіть документ або що змінити…', 'ai-pdf-generator' ); ?>"></textarea>
+							<button type="button" class="button button-primary" id="aipdf-chat-send" style="height:auto;">
+								<?php esc_html_e( 'Відправити', 'ai-pdf-generator' ); ?>
+							</button>
+						</div>
+						<p class="description" style="margin-top:4px;"><?php esc_html_e( 'Enter — відправити, Shift+Enter — новий рядок.', 'ai-pdf-generator' ); ?></p>
 					</div>
 
-					<div id="aipdf-saved" class="notice notice-success" style="display:none;padding:10px 12px;margin-top:12px;">
-						<p id="aipdf-saved-msg" style="margin:0 0 8px;"></p>
-						<p style="margin:0;">
-							<a href="#" id="aipdf-edit-link" class="button"><?php esc_html_e( 'Відкрити в редакторі', 'ai-pdf-generator' ); ?></a>
-							<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank" style="display:none;"><?php esc_html_e( 'Завантажити тестовий PDF', 'ai-pdf-generator' ); ?></a>
+					<!-- Права колонка: живе превю + динамічні поля -->
+					<div class="aipdf-preview-col" style="flex:1 1 380px;min-width:340px;">
+
+						<div id="aipdf-chat-meta" style="display:none;margin-bottom:8px;font-size:12px;color:#646970;">
+							<span id="aipdf-draft-badge" style="font-weight:600;color:#b26900;background:#fcf3e6;padding:2px 8px;border-radius:3px;"><?php esc_html_e( 'не збережено', 'ai-pdf-generator' ); ?></span>
+							<span id="aipdf-meta-line" style="margin-left:8px;"></span>
+						</div>
+
+						<iframe id="aipdf-preview" style="width:100%;height:360px;border:1px solid #ccd0d4;background:#fff;display:none;" sandbox=""></iframe>
+						<p id="aipdf-preview-placeholder" class="description" style="border:1px dashed #ccd0d4;border-radius:4px;padding:40px 16px;text-align:center;">
+							<?php esc_html_e( 'Превю з’явиться тут після першого повідомлення.', 'ai-pdf-generator' ); ?>
 						</p>
+
+						<div id="aipdf-chat-fields" style="margin-top:12px;"></div>
+
+						<p style="margin-top:12px;">
+							<button type="button" class="button button-primary button-hero" id="aipdf-save-btn" style="display:none;">
+								<?php esc_html_e( 'Зберегти шаблон', 'ai-pdf-generator' ); ?>
+							</button>
+						</p>
+
+						<div id="aipdf-saved" class="notice notice-success" style="display:none;padding:10px 12px;">
+							<p id="aipdf-saved-msg" style="margin:0 0 8px;"></p>
+							<p style="margin:0;">
+								<a href="#" id="aipdf-edit-link" class="button"><?php esc_html_e( 'Відкрити в редакторі', 'ai-pdf-generator' ); ?></a>
+								<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank" style="display:none;"><?php esc_html_e( 'Завантажити тестовий PDF', 'ai-pdf-generator' ); ?></a>
+							</p>
+						</div>
 					</div>
 				</div>
-
-				<div id="aipdf-error" class="notice notice-error" style="display:none;"><p></p></div>
 			</div>
 
 			<!-- ============ Вкладка 2: Налаштування ============ -->

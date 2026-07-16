@@ -50,7 +50,7 @@ class AIPDF_Template_Editor {
 			'aipdf-editor',
 			AIPDF_PLUGIN_URL . 'assets/editor.js',
 			array( 'jquery', 'wp-color-picker' ),
-			AIPDF_VERSION,
+			AIPDF_Plugin::asset_version( 'assets/editor.js' ),
 			true
 		);
 

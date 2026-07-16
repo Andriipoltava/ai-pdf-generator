@@ -3,7 +3,7 @@
  * Plugin Name:       AI PDF Generator
  * Plugin URI:        https://example.com/ai-pdf-generator
  * Description:       Генерує HTML-шаблони для PDF-документів через Gemini API та зберігає їх у прихованому CPT.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            Andrii
@@ -13,7 +13,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'AIPDF_VERSION', '0.1.0' );
+define( 'AIPDF_VERSION', '0.2.0' );
 define( 'AIPDF_PLUGIN_FILE', __FILE__ );
 define( 'AIPDF_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIPDF_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -105,6 +105,25 @@ final class AIPDF_Plugin {
 			self::$instance = new self();
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * Версія для enqueue-кешбастингу. У WP_DEBUG (типово на локальному
+	 * дев-стенді) — mtime файлу, щоб браузер ніколи не тримав старий JS/CSS
+	 * після правки. У релізі (WP_DEBUG вимкнено) — стала AIPDF_VERSION,
+	 * як і належить для нормального HTTP-кешування на проді.
+	 *
+	 * @param string $relative_path Шлях відносно кореня плагіна, напр. 'assets/admin.js'.
+	 */
+	public static function asset_version( string $relative_path ): string {
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			$full = AIPDF_PLUGIN_DIR . ltrim( $relative_path, '/' );
+			$mtime = file_exists( $full ) ? filemtime( $full ) : false;
+			if ( false !== $mtime ) {
+				return (string) $mtime;
+			}
+		}
+		return AIPDF_VERSION;
 	}
 
 	private function __construct() {
