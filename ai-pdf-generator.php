@@ -26,6 +26,7 @@ if ( file_exists( AIPDF_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
 require_once AIPDF_PLUGIN_DIR . 'includes/logger.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/triggers.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/fields.php';
+require_once AIPDF_PLUGIN_DIR . 'includes/conditions.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/brand.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/cpt-register.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/template-editor.php';
