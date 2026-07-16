@@ -129,19 +129,30 @@ class AIPDF_Trigger_Dispatcher {
 			return;
 		}
 
-		$this->run_trigger(
-			'woocommerce_payment_complete',
-			array(
-				'client_name'      => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
-				'email'            => $order->get_billing_email(),
-				'order_id'         => (string) $order->get_order_number(),
-				'order_total'      => $order->get_total() . ' ' . $order->get_currency(),
-				'date'             => wp_date( get_option( 'date_format' ) ),
-				// Не плейсхолдер шаблону — лише для перевірки умов (Conditional Logic).
-				'product_category' => $this->wc_order_categories( $order ),
-				// Внутрішній ключ (не плейсхолдер): доставка пише URL у мета замовлення.
-				'_wc_order_id'     => (string) $order->get_id(),
-			)
+		$this->run_trigger( 'woocommerce_payment_complete', self::build_wc_order_data( $order ) );
+	}
+
+	/**
+	 * Дані WooCommerce-замовлення у форматі для run_trigger(). Статичний
+	 * і публічний — той самий код перевикористовує масова генерація
+	 * (AIPDF_Bulk_Actions) для СТАРИХ замовлень, без повторної реєстрації
+	 * хуків (на відміну від `new AIPDF_Trigger_Dispatcher()`, що задублювало
+	 * б підписку на woocommerce_payment_complete та інші події).
+	 *
+	 * @param \WC_Order $order
+	 * @return array<string, string>
+	 */
+	public static function build_wc_order_data( $order ): array {
+		return array(
+			'client_name'      => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
+			'email'            => $order->get_billing_email(),
+			'order_id'         => (string) $order->get_order_number(),
+			'order_total'      => $order->get_total() . ' ' . $order->get_currency(),
+			'date'             => wp_date( get_option( 'date_format' ) ),
+			// Не плейсхолдер шаблону — лише для перевірки умов (Conditional Logic).
+			'product_category' => self::wc_order_categories( $order ),
+			// Внутрішній ключ (не плейсхолдер): доставка пише URL у мета замовлення.
+			'_wc_order_id'     => (string) $order->get_id(),
 		);
 	}
 
@@ -149,7 +160,7 @@ class AIPDF_Trigger_Dispatcher {
 	 * Назви всіх категорій товарів у замовленні (через кому) — доступно
 	 * як поле «product_category» в умовах генерації (Conditional Logic).
 	 */
-	private function wc_order_categories( $order ): string {
+	private static function wc_order_categories( $order ): string {
 		$names = array();
 
 		foreach ( $order->get_items() as $item ) {

@@ -34,6 +34,7 @@ require_once AIPDF_PLUGIN_DIR . 'includes/admin-page.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/ajax-handler.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/pdf-renderer.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/trigger-dispatcher.php';
+require_once AIPDF_PLUGIN_DIR . 'includes/bulk-actions.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/delivery.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/cron-cleanup.php';
 
@@ -133,6 +134,7 @@ final class AIPDF_Plugin {
 		new AIPDF_Admin_Page();
 		new AIPDF_Ajax_Handler();
 		new AIPDF_Trigger_Dispatcher();
+		new AIPDF_Bulk_Actions();
 		new AIPDF_Delivery();
 		new AIPDF_Cron_Cleanup();
 
