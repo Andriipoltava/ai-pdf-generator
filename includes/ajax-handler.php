@@ -533,6 +533,8 @@ EDITABLE FIELDS (editable_fields) — the KEY feature. The user must be able to 
 - Extract every STATIC, human-editable piece of content into an editable field: headings/titles, captions, static labels ("Invoice", "Thank you", "Total:"), accent colors, background colors, footer notes, button texts. NOT dynamic data (client_name, order_id, dates) — those stay as data placeholders from the trigger list.
 - In html_template reference each field as {{field_key}} (snake_case, unique). Example: <h1 style="color: {{accent_color}}">{{heading}}</h1>.
 - MANDATORY: every key you list in editable_fields MUST actually appear in html_template as {{key}} at least once. Do NOT declare a field you don't use (e.g. a background color you never apply). If you introduce a color/title/caption, wire it into the HTML via its placeholder.
+- COLORS ARE MANDATORY FIELDS: html_template must contain NO raw hex colors. Every single color you use — text, borders, backgrounds, accents — must come from either {{brand_color}} or a "color" editable_field placeholder. Writing style="color: #333333" is FORBIDDEN; write style="color: {{text_color}}" and declare text_color as a color field instead. Always include at least 2 color fields (e.g. accent_color, text_color) so the user can re-skin the document.
+- If a reference image is attached, derive the color field VALUES from the dominant colors you actually see in that image.
 - Return an "editable_fields" array. Each item: {"key","type","label","value"}.
   - "type" is one of: "color" (hex value like #1a1a2e), "text" (short single line), "textarea" (multi-line).
   - "label" is a short human label in the user's language (e.g. "Заголовок", "Колір акценту").
