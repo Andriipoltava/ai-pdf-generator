@@ -518,6 +518,15 @@ class AIPDF_Ajax_Handler {
 		// редагування. Каркас використовує їх як {{field_key}}.
 		$fields = AIPDF_Fields::normalize( $parsed['editable_fields'] ?? array() );
 
+		// Детерміністичний запобіжник: gemini-flash подеколи хардкодить #hex
+		// прямо в розмітці попри заборону в промпті. Незалежно від того,
+		// послухалась AI чи ні, — знаходимо будь-які hex-кольори, що лишились
+		// у HTML, виносимо їх у {{auto_color_N}} і додаємо color-поле.
+		// Редактор лишається куленепробивним навіть при непослуху моделі.
+		$extracted = AIPDF_Fields::extract_hardcoded_colors( $html, $fields );
+		$html      = $extracted['html'];
+		$fields    = array_merge( $fields, $extracted['fields'] );
+
 		// Відкидаємо «сирітські» поля, яких немає в каркасі, — щоб у редакторі
 		// не було контролів, що ні на що не впливають.
 		$fields = array_values(

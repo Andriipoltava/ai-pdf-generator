@@ -67,6 +67,84 @@ class AIPDF_Fields {
 	}
 
 	/**
+	 * Детерміністичний «запобіжник» від хардкоду кольорів. gemini-flash
+	 * подеколи хардкодить #hex просто в розмітці, попри пряму заборону
+	 * в промпті. Незалежно від слухняності моделі — сканує HTML на предмет
+	 * hex-кольорів у значеннях атрибутів (style="...", bgcolor="...",
+	 * color="..."), замінює кожен УНІКАЛЬНИЙ колір на {{auto_color_N}}
+	 * і повертає готове color-поле для editable_fields. Однакові кольори
+	 * (той самий hex у кількох місцях) отримують один спільний плейсхолдер.
+	 *
+	 * @param string                                              $html            Уже санітизований (wp_kses_post) HTML.
+	 * @param array<int, array{key:string,type:string,label:string,value:string}> $existing_fields Поля, які вже задекларувала AI — щоб не зіткнутись ключами.
+	 * @return array{html:string, fields:array<int, array{key:string,type:string,label:string,value:string}>}
+	 */
+	public static function extract_hardcoded_colors( string $html, array $existing_fields ): array {
+		$used_keys = array();
+		foreach ( $existing_fields as $field ) {
+			if ( isset( $field['key'] ) ) {
+				$used_keys[ $field['key'] ] = true;
+			}
+		}
+
+		$hex_to_key = array(); // нормалізований hex => вже присвоєний ключ (дедуп на весь документ).
+		$new_fields = array();
+		$counter    = 0;
+
+		$html = (string) preg_replace_callback(
+			'/(style|bgcolor|color)(\s*=\s*)"([^"]*)"/i',
+			static function ( array $attr_match ) use ( &$hex_to_key, &$new_fields, &$used_keys, &$counter ) {
+				$value = preg_replace_callback(
+					'/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/',
+					static function ( array $hex_match ) use ( &$hex_to_key, &$new_fields, &$used_keys, &$counter ) {
+						$normalized = AIPDF_Fields::expand_hex( $hex_match[0] );
+
+						if ( ! isset( $hex_to_key[ $normalized ] ) ) {
+							do {
+								++$counter;
+								$key = 'auto_color_' . $counter;
+							} while ( isset( $used_keys[ $key ] ) );
+
+							$used_keys[ $key ]        = true;
+							$hex_to_key[ $normalized ] = $key;
+							$new_fields[]              = array(
+								'key'   => $key,
+								'type'  => 'color',
+								'label' => sprintf(
+									/* translators: %d: sequential number of the auto-detected color. */
+									__( 'Колір %d (виявлено автоматично)', 'ai-pdf-generator' ),
+									count( $new_fields ) + 1
+								),
+								'value' => $normalized,
+							);
+						}
+
+						return '{{' . $hex_to_key[ $normalized ] . '}}';
+					},
+					$attr_match[3]
+				);
+
+				// Групи 1 і 2 — ім'я атрибута й «=» з пробілами саме такі, якими були.
+				return $attr_match[1] . $attr_match[2] . '"' . $value . '"';
+			},
+			$html
+		);
+
+		return array( 'html' => $html, 'fields' => $new_fields );
+	}
+
+	/**
+	 * Нормалізує hex-колір (3 або 6 знаків, з «#» або без) у формат «#rrggbb».
+	 */
+	private static function expand_hex( string $hex ): string {
+		$hex = ltrim( strtolower( $hex ), '#' );
+		if ( 3 === strlen( $hex ) ) {
+			$hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+		}
+		return '#' . $hex;
+	}
+
+	/**
 	 * Мапа key => value для підстановки в плейсхолдери.
 	 *
 	 * @param array<int, array{key:string,value:string}> $fields
