@@ -149,6 +149,16 @@ class AIPDF_Admin_Page {
 			)
 		);
 
+		register_setting(
+			'aipdf_settings_group',
+			AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( $this, 'sanitize_cloud_token' ),
+				'default'           => '',
+			)
+		);
+
 		// --- Branding ---
 		register_setting( 'aipdf_settings_group', AIPDF_Brand::OPT_LOGO, array(
 			'type'              => 'string',
@@ -237,6 +247,21 @@ class AIPDF_Admin_Page {
 	}
 
 	/**
+	 * Same "don't wipe on empty submit" behavior as the Gemini API key —
+	 * this field is normally set automatically by the trial-activation
+	 * AJAX call, but can also be pasted manually (e.g. a purchased license).
+	 */
+	public function sanitize_cloud_token( ?string $value ): string {
+		$value = trim( (string) $value );
+
+		if ( '' === $value ) {
+			return (string) get_option( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN, '' );
+		}
+
+		return sanitize_text_field( $value );
+	}
+
+	/**
 	 * JS is only enqueued on the plugin's own page.
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
@@ -277,6 +302,9 @@ class AIPDF_Admin_Page {
 					'actionEmail'  => __( 'email attachment', 'ai-pdf-generator' ),
 					'actionDl'     => __( 'download link', 'ai-pdf-generator' ),
 					'welcomeMsg'   => __( 'Describe the document you need, or start from a ready-made example below.', 'ai-pdf-generator' ),
+					'trialButton'    => __( 'Get Free Trial (3 Generations)', 'ai-pdf-generator' ),
+					'trialRequesting' => __( 'Requesting…', 'ai-pdf-generator' ),
+					'trialActivated' => __( 'Trial activated!', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -290,7 +318,8 @@ class AIPDF_Admin_Page {
 			wp_die( esc_html__( 'Insufficient permissions.', 'ai-pdf-generator' ) );
 		}
 
-		$api_key = (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
+		$api_key     = (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
+		$cloud_token = (string) get_option( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN, '' );
 
 		// Smart placeholders: only show groups for active plugins.
 		$placeholder_groups = array(
@@ -434,6 +463,28 @@ class AIPDF_Admin_Page {
 								/>
 								<p class="description">
 									<?php esc_html_e( 'The key is stored in the site\'s options and never echoed back into HTML. A safer option: add define( \'AIPDF_GEMINI_API_KEY\', \'…\' ) to wp-config.php — the constant takes priority.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="aipdf-cloud-token"><?php esc_html_e( 'Cloud License Key', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<input
+									type="password"
+									id="aipdf-cloud-token"
+									name="<?php echo esc_attr( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN ); ?>"
+									value=""
+									class="regular-text"
+									autocomplete="new-password"
+									placeholder="<?php echo $cloud_token ? esc_attr__( '•••••••• (license active — enter a new key to replace it)', 'ai-pdf-generator' ) : esc_attr__( 'No license key yet', 'ai-pdf-generator' ); ?>"
+								/>
+								<?php if ( '' === $cloud_token ) : ?>
+									<button type="button" class="button" id="aipdf-get-trial-btn"><?php esc_html_e( 'Get Free Trial (3 Generations)', 'ai-pdf-generator' ); ?></button>
+								<?php endif; ?>
+								<p class="description">
+									<?php esc_html_e( 'Powers cloud-based generation. Click "Get Free Trial" for 3 free generations tied to your admin email and this domain, or paste a purchased license key here.', 'ai-pdf-generator' ); ?>
 								</p>
 							</td>
 						</tr>

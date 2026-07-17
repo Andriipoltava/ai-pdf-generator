@@ -89,6 +89,48 @@
 			} );
 		}() );
 
+		// ---------- Cloud trial activation (Settings tab) ----------
+		( function () {
+			var $btn  = $( '#aipdf-get-trial-btn' ),
+				i18n  = aipdfData.i18n || {};
+
+			if ( ! $btn.length ) {
+				return; // No license key saved yet is required for this button to render server-side.
+			}
+
+			function resetButton() {
+				$btn.prop( 'disabled', false ).text( i18n.trialButton || 'Get Free Trial (3 Generations)' );
+			}
+
+			$btn.on( 'click', function () {
+				$btn.prop( 'disabled', true ).text( i18n.trialRequesting || 'Requesting…' );
+
+				$.post( aipdfData.ajaxUrl, {
+					action: 'aipdf_get_trial',
+					nonce:  aipdfData.nonce
+				} )
+					.done( function ( response ) {
+						if ( response && response.success ) {
+							window.alert( ( response.data && response.data.message ) || i18n.trialActivated || 'Trial activated!' );
+							// Reload so the server-rendered page reflects the
+							// newly saved license key (and hides this button).
+							window.location.reload();
+							return;
+						}
+						window.alert( ( response && response.data && response.data.message ) || i18n.error || 'Something went wrong.' );
+						resetButton();
+					} )
+					.fail( function ( xhr ) {
+						var message = i18n.error || 'Something went wrong.';
+						if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+							message = xhr.responseJSON.data.message;
+						}
+						window.alert( message );
+						resetButton();
+					} );
+			} );
+		}() );
+
 		// ==================== CHAT (Playground) ====================
 
 		var $history   = $( '#aipdf-chat-history' ),

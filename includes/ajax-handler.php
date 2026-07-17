@@ -23,10 +23,26 @@ class AIPDF_Ajax_Handler {
 
 	private const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent';
 
+	/**
+	 * Option storing the cloud license/trial token.
+	 */
+	public const OPTION_CLOUD_TOKEN = 'aipdf_cloud_token';
+
+	/**
+	 * Option storing the active generation mode ('gemini_direct' | 'cloud_service').
+	 */
+	public const OPTION_GENERATION_MODE = 'aipdf_generation_mode';
+
+	/**
+	 * Trial-license endpoint on our licensing backend.
+	 */
+	private const TRIAL_ENDPOINT = 'http://chnplugi79173.avalon.chost.com.ua/api/v1/license/trial';
+
 	public function __construct() {
 		// Logged-in admins only — wp_ajax_nopriv is deliberately not registered.
 		add_action( 'wp_ajax_aipdf_chat', array( $this, 'handle_chat' ) );
 		add_action( 'wp_ajax_aipdf_save', array( $this, 'handle_save' ) );
+		add_action( 'wp_ajax_aipdf_get_trial', array( $this, 'handle_get_trial' ) );
 	}
 
 	/**
@@ -49,6 +65,85 @@ class AIPDF_Ajax_Handler {
 		}
 
 		return $api_key;
+	}
+
+	/**
+	 * Requests a free trial cloud license (3 generations) from our
+	 * licensing backend, tied to the current admin's email and this site's
+	 * domain. On success, stores the returned token and switches the
+	 * generation mode to 'cloud_service'. The backend is the source of
+	 * truth for anti-abuse (one trial per email/domain) — a 403/422 there
+	 * simply surfaces as an error message here.
+	 */
+	public function handle_get_trial(): void {
+		check_ajax_referer( 'aipdf_generate', 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'ai-pdf-generator' ) ), 403 );
+		}
+
+		$email  = (string) wp_get_current_user()->user_email;
+		$domain = (string) wp_parse_url( site_url(), PHP_URL_HOST );
+
+		if ( '' === $email || '' === $domain ) {
+			wp_send_json_error( array( 'message' => __( 'Could not determine your admin email or site domain.', 'ai-pdf-generator' ) ), 400 );
+		}
+
+		$response = wp_remote_post(
+			self::TRIAL_ENDPOINT,
+			array(
+				'timeout' => 20,
+				'headers' => array( 'Accept' => 'application/json' ),
+				'body'    => array(
+					'email'        => $email,
+					'domain'       => $domain,
+					'product_slug' => 'ai-pdf-generator',
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			AIPDF_Logger::get_instance()->error( 'Trial request failed: ' . $response->get_error_message() );
+			wp_send_json_error( array( 'message' => __( 'Could not reach the licensing server. Please try again later.', 'ai-pdf-generator' ) ), 502 );
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( 200 !== $code ) {
+			// Laravel-style error payloads: a top-level "message", or a
+			// validation "errors" map — fall back to a generic message if
+			// neither is present.
+			$message = '';
+			if ( is_array( $data ) ) {
+				if ( ! empty( $data['message'] ) && is_string( $data['message'] ) ) {
+					$message = $data['message'];
+				} elseif ( ! empty( $data['errors'] ) && is_array( $data['errors'] ) ) {
+					$first = reset( $data['errors'] );
+					$message = is_array( $first ) ? (string) reset( $first ) : (string) $first;
+				}
+			}
+			if ( '' === $message ) {
+				$message = __( 'The trial request was rejected.', 'ai-pdf-generator' );
+			}
+			$message = sanitize_text_field( $message );
+
+			AIPDF_Logger::get_instance()->warning( sprintf( 'Trial request rejected (%d) for %s / %s: %s', $code, $email, $domain, $message ) );
+			wp_send_json_error( array( 'message' => $message ), $code );
+		}
+
+		if ( empty( $data['plainTextToken'] ) || ! is_string( $data['plainTextToken'] ) ) {
+			AIPDF_Logger::get_instance()->error( 'Trial response missing plainTextToken.' );
+			wp_send_json_error( array( 'message' => __( 'The licensing server returned an unexpected response.', 'ai-pdf-generator' ) ), 502 );
+		}
+
+		$token = sanitize_text_field( $data['plainTextToken'] );
+		update_option( self::OPTION_CLOUD_TOKEN, $token );
+		update_option( self::OPTION_GENERATION_MODE, 'cloud_service' );
+
+		AIPDF_Logger::get_instance()->info( sprintf( 'Trial license activated for %s (%s).', $email, $domain ) );
+
+		wp_send_json_success( array( 'message' => __( 'Trial activated!', 'ai-pdf-generator' ) ) );
 	}
 
 	/**
