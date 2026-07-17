@@ -1,20 +1,20 @@
 /**
- * AI PDF Generator — фронтенд-доставка download_link.
- * Домальовує кнопку завантаження PDF після успішної відправки
- * форм CF7 та Elementor Pro.
+ * AI PDF Generator — front-end download_link delivery.
+ * Draws a PDF download button after a successful CF7 or Elementor Pro
+ * form submission.
  */
 ( function () {
 	'use strict';
 
 	/**
-	 * Вставляє кнопку завантаження після елемента форми.
+	 * Inserts a download button right after a form element.
 	 *
-	 * @param {Element} anchor Елемент, після якого вставити кнопку.
-	 * @param {string}  url    URL PDF-файлу.
+	 * @param {Element} anchor Element after which to insert the button.
+	 * @param {string}  url    PDF file URL.
 	 */
 	function insertButton( anchor, url ) {
 		if ( ! anchor || ! url || anchor.parentNode.querySelector( '.aipdf-download-btn' ) ) {
-			return; // Кнопка вже є — не дублюємо.
+			return; // Button already present — don't duplicate it.
 		}
 
 		var wrap = document.createElement( 'div' );
@@ -23,7 +23,7 @@
 
 		var link = document.createElement( 'a' );
 		link.className = 'button aipdf-download-btn';
-		link.href = url; // URL приходить із нашого ж бекенду (esc_url_raw).
+		link.href = url; // URL comes from our own backend (esc_url_raw).
 		link.target = '_blank';
 		link.rel = 'noopener';
 		link.textContent = ( window.aipdfFront && window.aipdfFront.buttonText ) || 'Download PDF';
@@ -33,7 +33,7 @@
 		anchor.parentNode.insertBefore( wrap, anchor.nextSibling );
 	}
 
-	// Contact Form 7: подія wpcf7mailsent несе apiResponse із нашим полем.
+	// Contact Form 7: the wpcf7mailsent event carries apiResponse with our field.
 	document.addEventListener( 'wpcf7mailsent', function ( event ) {
 		var api = event.detail && event.detail.apiResponse;
 		if ( api && api.aipdf_download_url ) {
@@ -41,7 +41,7 @@
 		}
 	} );
 
-	// Elementor Pro: jQuery-подія submit_success із response.data.
+	// Elementor Pro: jQuery's submit_success event with response.data.
 	if ( window.jQuery ) {
 		window.jQuery( document ).on( 'submit_success', function ( event, response ) {
 			var url = response && response.data && response.data.aipdf_download_url;

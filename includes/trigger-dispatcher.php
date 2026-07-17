@@ -1,8 +1,8 @@
 <?php
 /**
- * Диспетчер тригерів: слухає реальні хуки плагінів (Amelia, WooCommerce,
- * Contact Form 7, …), знаходить збережений ШІ-шаблон за тригером
- * і запускає генерацію PDF.
+ * Trigger dispatcher: listens to real plugin hooks (Amelia, WooCommerce,
+ * Contact Form 7, …), finds the saved AI template for the trigger, and
+ * kicks off PDF generation.
  *
  * @package AI_PDF_Generator
  */
@@ -14,9 +14,9 @@ class AIPDF_Trigger_Dispatcher {
 	private AIPDF_PDF_Renderer $renderer;
 
 	/**
-	 * Результат останньої генерації в межах ПОТОЧНОГО запиту:
-	 * [ 'url' => string, 'action_type' => string ]. Потрібен доставці
-	 * (CF7/Elementor), яка фільтрує JSON-відповідь у тому ж запиті.
+	 * The most recent generation result within the CURRENT request:
+	 * [ 'url' => string, 'action_type' => string ]. Needed by delivery
+	 * (CF7/Elementor), which filters the form's JSON response in the same request.
 	 *
 	 * @var array{url:string,action_type:string}|null
 	 */
@@ -25,7 +25,7 @@ class AIPDF_Trigger_Dispatcher {
 	public function __construct() {
 		$this->renderer = new AIPDF_PDF_Renderer();
 
-		// --- Хуки сторонніх плагінів реєструємо ЛИШЕ якщо плагін активний. ---
+		// --- Third-party plugin hooks are registered ONLY if the plugin is active. ---
 		if ( AIPDF_Triggers::is_available( 'woocommerce_payment_complete' ) ) {
 			add_action( 'woocommerce_payment_complete', array( $this, 'on_wc_order_paid' ), 10, 1 );
 		}
@@ -40,17 +40,17 @@ class AIPDF_Trigger_Dispatcher {
 		}
 
 		/**
-		 * Універсальна точка входу для решти тригерів:
+		 * Generic entry point for the remaining triggers:
 		 * do_action( 'aipdf_run_trigger', 'bookly_booking_done', [ 'client_name' => …, 'email' => … ] );
 		 */
 		add_action( 'aipdf_run_trigger', array( $this, 'run_trigger' ), 10, 2 );
 	}
 
 	/**
-	 * Головний конвеєр: тригер → шаблон із БД → PDF → доставка.
+	 * Main pipeline: trigger -> template from the DB -> PDF -> delivery.
 	 *
-	 * @param string                $trigger Один із ключів каталогу AIPDF_Triggers.
-	 * @param array<string, string> $data    Дані для плейсхолдерів.
+	 * @param string                $trigger One of AIPDF_Triggers' catalog keys.
+	 * @param array<string, string> $data    Placeholder data.
 	 */
 	public function run_trigger( string $trigger, array $data ): void {
 		if ( ! in_array( $trigger, AIPDF_Triggers::all(), true ) ) {
@@ -59,21 +59,21 @@ class AIPDF_Trigger_Dispatcher {
 
 		$template = $this->renderer->find_template_by_trigger( $trigger );
 		if ( ! $template ) {
-			return; // Для цього тригера шаблон ще не згенерований — тихо виходимо.
+			return; // No template generated for this trigger yet — bail out quietly.
 		}
 
 		if ( ! AIPDF_Conditions::matches( $template->ID, $data ) ) {
 			AIPDF_Logger::get_instance()->info(
-				sprintf( 'Тригер %s: умови генерації не виконано — PDF не створюється.', $trigger )
+				sprintf( 'Trigger %s: generation conditions not met — PDF not created.', $trigger )
 			);
-			return; // Умови (Conditional Logic) не виконані — не витрачаємо рендер/API даремно.
+			return; // Conditional Logic wasn't satisfied — don't waste a render/API call.
 		}
 
 		$result = $this->renderer->render_to_file( $template->ID, $data );
 		if ( is_wp_error( $result ) ) {
-			// Не валимо чужий процес (оплату/бронювання) — лише лог.
+			// Don't break someone else's process (payment/booking) — just log it.
 			AIPDF_Logger::get_instance()->error(
-				sprintf( 'Генерація за тригером %s не вдалася: %s', $trigger, $result->get_error_message() )
+				sprintf( 'Generation for trigger %s failed: %s', $trigger, $result->get_error_message() )
 			);
 			return;
 		}
@@ -90,19 +90,20 @@ class AIPDF_Trigger_Dispatcher {
 		}
 
 		/**
-		 * Хук для розширення: доставка download_link, запис у CRM тощо.
+		 * Extension hook: download_link delivery, CRM logging, etc.
 		 *
-		 * @param array   $result   { path, url } згенерованого PDF.
-		 * @param string  $trigger  Тригер, що спрацював.
-		 * @param WP_Post $template Пост-шаблон.
-		 * @param array   $data     Дані плейсхолдерів.
+		 * @param array   $result   { path, url } of the generated PDF.
+		 * @param string  $trigger  The trigger that fired.
+		 * @param WP_Post $template Template post.
+		 * @param array   $data     Placeholder data.
 		 */
 		do_action( 'aipdf_pdf_generated', $result, $trigger, $template, $data );
 	}
 
 	/**
-	 * URL PDF, згенерованого в поточному запиті з action_type = download_link.
-	 * Використовується доставкою (CF7 / Elementor) у фільтрах відповіді.
+	 * URL of the PDF generated in the current request with
+	 * action_type = download_link. Used by delivery (CF7 / Elementor) in
+	 * response filters.
 	 */
 	public static function last_download_url(): string {
 		if ( self::$last_result && 'download_link' === self::$last_result['action_type'] ) {
@@ -113,11 +114,11 @@ class AIPDF_Trigger_Dispatcher {
 	}
 
 	/* -------------------------------------------------------------------
-	 * Адаптери під конкретні плагіни: витягуємо дані у єдиний формат.
+	 * Adapters for specific plugins: extract data into a unified shape.
 	 * ---------------------------------------------------------------- */
 
 	/**
-	 * WooCommerce: замовлення оплачено.
+	 * WooCommerce: order paid.
 	 */
 	public function on_wc_order_paid( $order_id ): void {
 		if ( ! function_exists( 'wc_get_order' ) ) {
@@ -133,11 +134,11 @@ class AIPDF_Trigger_Dispatcher {
 	}
 
 	/**
-	 * Дані WooCommerce-замовлення у форматі для run_trigger(). Статичний
-	 * і публічний — той самий код перевикористовує масова генерація
-	 * (AIPDF_Bulk_Actions) для СТАРИХ замовлень, без повторної реєстрації
-	 * хуків (на відміну від `new AIPDF_Trigger_Dispatcher()`, що задублювало
-	 * б підписку на woocommerce_payment_complete та інші події).
+	 * WooCommerce order data in the shape run_trigger() expects. Static
+	 * and public — the bulk-generation feature (AIPDF_Bulk_Actions) reuses
+	 * this exact code for EXISTING orders, without a second
+	 * AIPDF_Trigger_Dispatcher instance (which would double-register the
+	 * woocommerce_payment_complete subscription and other events).
 	 *
 	 * @param \WC_Order $order
 	 * @return array<string, string>
@@ -149,16 +150,16 @@ class AIPDF_Trigger_Dispatcher {
 			'order_id'         => (string) $order->get_order_number(),
 			'order_total'      => $order->get_total() . ' ' . $order->get_currency(),
 			'date'             => wp_date( get_option( 'date_format' ) ),
-			// Не плейсхолдер шаблону — лише для перевірки умов (Conditional Logic).
+			// Not a template placeholder — used only to evaluate Conditional Logic.
 			'product_category' => self::wc_order_categories( $order ),
-			// Внутрішній ключ (не плейсхолдер): доставка пише URL у мета замовлення.
+			// Internal key (not a placeholder): delivery writes the URL to order meta.
 			'_wc_order_id'     => (string) $order->get_id(),
 		);
 	}
 
 	/**
-	 * Назви всіх категорій товарів у замовленні (через кому) — доступно
-	 * як поле «product_category» в умовах генерації (Conditional Logic).
+	 * Names of all product categories in the order (comma-separated) —
+	 * available as the "product_category" field in Conditional Logic.
 	 */
 	private static function wc_order_categories( $order ): string {
 		$names = array();
@@ -180,8 +181,8 @@ class AIPDF_Trigger_Dispatcher {
 	}
 
 	/**
-	 * Elementor Pro Forms: додаємо URL PDF у відповідь AJAX —
-	 * фронтенд-JS підхопить його в події submit_success.
+	 * Elementor Pro Forms: add the PDF URL to the AJAX response — front-end
+	 * JS picks it up on the submit_success event.
 	 *
 	 * @param mixed $record       \ElementorPro\Modules\Forms\Classes\Form_Record.
 	 * @param mixed $ajax_handler \ElementorPro\Modules\Forms\Classes\Ajax_Handler.
@@ -191,7 +192,7 @@ class AIPDF_Trigger_Dispatcher {
 			return;
 		}
 
-		// Поля форми: id => [ 'value' => … ]. Ім'я та email вгадуємо захищено.
+		// Form fields: id => [ 'value' => … ]. Name and email are guessed defensively.
 		$raw    = (array) $record->get( 'fields' );
 		$name   = '';
 		$email  = '';
@@ -208,7 +209,7 @@ class AIPDF_Trigger_Dispatcher {
 			}
 		}
 
-		// Fallback: перше непорожнє не-email поле.
+		// Fallback: the first non-empty, non-email field.
 		if ( '' === $name ) {
 			foreach ( $raw as $field ) {
 				$value = sanitize_text_field( (string) ( $field['value'] ?? '' ) );
@@ -235,12 +236,12 @@ class AIPDF_Trigger_Dispatcher {
 	}
 
 	/**
-	 * Amelia: бронювання створене.
+	 * Amelia: a booking was created.
 	 *
-	 * Структура $args відрізняється між версіями Amelia, тому читаємо
-	 * дані максимально захищено, з кількома fallback-шляхами.
+	 * The $args structure varies between Amelia versions, so data is read
+	 * as defensively as possible, with several fallback paths.
 	 *
-	 * @param mixed $args Масив reservation/booking від Amelia.
+	 * @param mixed $args Reservation/booking array from Amelia.
 	 */
 	public function on_amelia_booking( $args ): void {
 		$args = is_array( $args ) ? $args : array();
@@ -260,14 +261,16 @@ class AIPDF_Trigger_Dispatcher {
 				'date'         => wp_date( get_option( 'date_format' ) ),
 				'booking_date' => $args['appointment']['bookingStart'] ?? '',
 				'service_name' => $args['service']['name'] ?? ( $args['appointment']['service']['name'] ?? '' ),
-				// QR з номером бронювання: mPDF вставить <img> за цим URL.
+				// QR code with the booking number: kept for templates still
+				// using the old <img src="{{qr_code}}"> approach — new AI
+				// templates use mPDF's native <barcode> tag instead.
 				'qr_code'     => $this->qr_url( 'amelia-' . ( $args['booking']['id'] ?? '' ) ),
 			)
 		);
 	}
 
 	/**
-	 * Contact Form 7: форма відправлена.
+	 * Contact Form 7: a form was submitted.
 	 *
 	 * @param mixed $contact_form WPCF7_ContactForm.
 	 */
@@ -294,7 +297,7 @@ class AIPDF_Trigger_Dispatcher {
 	}
 
 	/* -------------------------------------------------------------------
-	 * Доставка.
+	 * Delivery.
 	 * ---------------------------------------------------------------- */
 
 	private function send_email_with_pdf( string $email, WP_Post $template, string $pdf_path, array $data ): void {
@@ -302,7 +305,7 @@ class AIPDF_Trigger_Dispatcher {
 			'aipdf_email_subject',
 			sprintf(
 				/* translators: %s: site name. */
-				__( 'Ваш документ від %s', 'ai-pdf-generator' ),
+				__( 'Your document from %s', 'ai-pdf-generator' ),
 				wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES )
 			),
 			$template,
@@ -311,7 +314,7 @@ class AIPDF_Trigger_Dispatcher {
 
 		$body = apply_filters(
 			'aipdf_email_body',
-			__( "Вітаємо!\n\nВаш документ у вкладенні до цього листа.", 'ai-pdf-generator' ),
+			__( "Hello!\n\nYour document is attached to this email.", 'ai-pdf-generator' ),
 			$template,
 			$data
 		);
@@ -320,18 +323,19 @@ class AIPDF_Trigger_Dispatcher {
 
 		if ( $sent ) {
 			AIPDF_Logger::get_instance()->info(
-				sprintf( 'Лист із PDF (шаблон #%d) відправлено на %s.', $template->ID, $email )
+				sprintf( 'Email with PDF (template #%d) sent to %s.', $template->ID, $email )
 			);
 		} else {
 			AIPDF_Logger::get_instance()->error(
-				sprintf( 'wp_mail не зміг відправити лист із PDF (шаблон #%d) на %s.', $template->ID, $email )
+				sprintf( 'wp_mail failed to send the PDF email (template #%d) to %s.', $template->ID, $email )
 			);
 		}
 	}
 
 	/**
-	 * URL QR-коду через публічний сервіс (для MVP).
-	 * На проді краще замінити локальною генерацією (endroid/qr-code).
+	 * QR code URL via a public service (for the MVP).
+	 * In production, prefer a local library (endroid/qr-code) or mPDF's
+	 * native <barcode> tag, which the AI-generated templates now use directly.
 	 */
 	private function qr_url( string $payload ): string {
 		return 'https://api.qrserver.com/v1/create-qr-code/?' . http_build_query(

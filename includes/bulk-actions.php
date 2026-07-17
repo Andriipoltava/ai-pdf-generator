@@ -1,12 +1,12 @@
 <?php
 /**
- * Масова генерація PDF для існуючих замовлень WooCommerce (Bulk Actions).
+ * Bulk PDF generation for existing WooCommerce orders (Bulk Actions).
  *
- * Дозволяє виділити старі замовлення в списку та поставити генерацію PDF
- * у чергу через Action Scheduler (той самий планувальник, що йде в комплекті
- * з WooCommerce). Документи створюються по одному у фоновому режимі —
- * НЕ всі одразу синхронно в межах одного запиту, що при десятках чи сотнях
- * замовлень могло б вичерпати ліміт часу виконання й «покласти» сайт.
+ * Lets old orders be selected in the list and queues PDF generation
+ * through Action Scheduler (the same scheduler bundled with WooCommerce).
+ * Documents are created one at a time in the background — NOT all at once
+ * synchronously within a single request, which for dozens or hundreds of
+ * orders could exhaust the execution time limit and bring the site down.
  *
  * @package AI_PDF_Generator
  */
@@ -16,28 +16,29 @@ defined( 'ABSPATH' ) || exit;
 class AIPDF_Bulk_Actions {
 
 	/**
-	 * Слаг bulk-дії в dropdown списку замовлень.
+	 * Bulk-action slug in the orders list dropdown.
 	 */
 	private const ACTION = 'aipdf_bulk_generate';
 
 	/**
-	 * Назва фонового завдання Action Scheduler.
+	 * Action Scheduler background job name.
 	 */
 	private const HOOK = 'aipdf_bulk_generate_order';
 
 	/**
-	 * Затримка (сек) між запланованими завданнями — навмисне «розтягування»
-	 * навантаження в часі, а не спроба обробити все однією хвилею.
+	 * Delay (seconds) between scheduled jobs — deliberately spreading the
+	 * load over time instead of trying to process everything in one wave.
 	 */
 	private const STAGGER_SECONDS = 4;
 
 	public function __construct() {
 		if ( ! AIPDF_Triggers::is_available( 'woocommerce_payment_complete' ) ) {
-			return; // WooCommerce неактивний — масова генерація його замовлень не має сенсу.
+			return; // WooCommerce inactive — bulk-generating its orders makes no sense.
 		}
 
-		// Легасі-екран замовлень (CPT shop_order) та HPOS-екран (wc-orders) —
-		// підтримуємо обидва, бо WooCommerce поступово мігрує сайти на HPOS.
+		// Legacy orders screen (CPT shop_order) and the HPOS screen
+		// (wc-orders) — support both, since WooCommerce is gradually
+		// migrating sites to HPOS.
 		add_filter( 'bulk_actions-edit-shop_order', array( $this, 'register_bulk_action' ) );
 		add_filter( 'bulk_actions-woocommerce_page_wc-orders', array( $this, 'register_bulk_action' ) );
 
@@ -46,24 +47,24 @@ class AIPDF_Bulk_Actions {
 
 		add_action( 'admin_notices', array( $this, 'render_notice' ) );
 
-		// Обробник ОДНОГО завдання в черзі Action Scheduler.
+		// Handler for ONE job in the Action Scheduler queue.
 		add_action( self::HOOK, array( $this, 'process_order' ), 10, 1 );
 	}
 
 	/**
-	 * Додає пункт у dropdown «Bulk actions» списку замовлень.
+	 * Adds an entry to the orders list "Bulk actions" dropdown.
 	 *
 	 * @param array<string, string> $actions
 	 * @return array<string, string>
 	 */
 	public function register_bulk_action( array $actions ): array {
-		$actions[ self::ACTION ] = __( 'AI PDF: Згенерувати документи', 'ai-pdf-generator' );
+		$actions[ self::ACTION ] = __( 'AI PDF: Generate Documents', 'ai-pdf-generator' );
 		return $actions;
 	}
 
 	/**
-	 * Обробляє вибрану bulk-дію: планує по одному фоновому завданню на кожне
-	 * обране замовлення через Action Scheduler, з невеликим зсувом у часі.
+	 * Handles the selected bulk action: schedules one background job per
+	 * selected order via Action Scheduler, staggered slightly over time.
 	 *
 	 * @param string          $redirect_to
 	 * @param string          $action
@@ -79,10 +80,11 @@ class AIPDF_Bulk_Actions {
 		}
 
 		if ( ! function_exists( 'as_schedule_single_action' ) ) {
-			// Action Scheduler завжди йде в комплекті з активним WooCommerce;
-			// його відсутність — ознака зламаної інсталяції. Свідомо НЕ робимо
-			// синхронний fallback (рендер десятків PDF в одному запиті —
-			// саме те навантаження, якого просили уникнути).
+			// Action Scheduler always ships with an active WooCommerce;
+			// its absence signals a broken install. Deliberately NOT
+			// falling back to synchronous processing — rendering dozens
+			// of PDFs in one request is exactly the load this feature
+			// exists to avoid.
 			return add_query_arg( 'aipdf_bulk_error', 'no_scheduler', $redirect_to );
 		}
 
@@ -99,7 +101,7 @@ class AIPDF_Bulk_Actions {
 
 		AIPDF_Logger::get_instance()->info(
 			sprintf(
-				'Bulk-генерація: заплановано %d завдань (замовлення: %s).',
+				'Bulk generation: %d job(s) scheduled (orders: %s).',
 				$scheduled,
 				implode( ', ', array_map( 'absint', $order_ids ) )
 			)
@@ -109,10 +111,10 @@ class AIPDF_Bulk_Actions {
 	}
 
 	/**
-	 * ОДНЕ фонове завдання Action Scheduler: генерує PDF для одного
-	 * замовлення тим самим кодовим шляхом, що й реальна подія «оплата
-	 * пройшла», — включно з перевіркою умов генерації (Conditional Logic)
-	 * та доставкою (лист / download-link).
+	 * ONE Action Scheduler background job: generates a PDF for a single
+	 * order via the exact same code path as the live "payment complete"
+	 * event — including the Conditional Logic check and delivery
+	 * (email / download link).
 	 */
 	public function process_order( int $order_id ): void {
 		if ( ! function_exists( 'wc_get_order' ) ) {
@@ -121,7 +123,7 @@ class AIPDF_Bulk_Actions {
 
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) {
-			AIPDF_Logger::get_instance()->warning( "Bulk-генерація: замовлення #{$order_id} не знайдено." );
+			AIPDF_Logger::get_instance()->warning( "Bulk generation: order #{$order_id} not found." );
 			return;
 		}
 
@@ -133,11 +135,11 @@ class AIPDF_Bulk_Actions {
 	}
 
 	/**
-	 * Повідомлення в адмінці одразу після bulk-дії (редирект зі списку
-	 * замовлень несе query-параметр — стандартний патерн WP bulk actions).
+	 * Admin notice shown right after the bulk action (the redirect from the
+	 * orders list carries a query arg — the standard WP bulk-actions pattern).
 	 */
 	public function render_notice(): void {
-		if ( isset( $_REQUEST['aipdf_bulk_scheduled'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- лише інформаційний notice, значення приводимо до числа.
+		if ( isset( $_REQUEST['aipdf_bulk_scheduled'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- informational notice only, value is cast to an integer.
 			$count = absint( $_REQUEST['aipdf_bulk_scheduled'] );
 			printf(
 				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
@@ -145,8 +147,8 @@ class AIPDF_Bulk_Actions {
 					sprintf(
 						/* translators: %d: number of scheduled background jobs. */
 						_n(
-							'AI PDF Generator: заплановано %d документ у фоновому режимі. Перевірте «Журнал подій» за кілька хвилин.',
-							'AI PDF Generator: заплановано %d документів у фоновому режимі. Перевірте «Журнал подій» за кілька хвилин.',
+							'AI PDF Generator: %d document scheduled in the background. Check the "Event Log" in a few minutes.',
+							'AI PDF Generator: %d documents scheduled in the background. Check the "Event Log" in a few minutes.',
 							$count,
 							'ai-pdf-generator'
 						),
@@ -156,10 +158,10 @@ class AIPDF_Bulk_Actions {
 			);
 		}
 
-		if ( isset( $_REQUEST['aipdf_bulk_error'] ) && 'no_scheduler' === $_REQUEST['aipdf_bulk_error'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- лише інформаційний notice.
+		if ( isset( $_REQUEST['aipdf_bulk_error'] ) && 'no_scheduler' === $_REQUEST['aipdf_bulk_error'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- informational notice only.
 			printf(
 				'<div class="notice notice-error"><p>%s</p></div>',
-				esc_html__( 'AI PDF Generator: Action Scheduler недоступний — переконайтесь, що WooCommerce активний і оновлений.', 'ai-pdf-generator' )
+				esc_html__( 'AI PDF Generator: Action Scheduler is unavailable — make sure WooCommerce is active and up to date.', 'ai-pdf-generator' )
 			);
 		}
 	}

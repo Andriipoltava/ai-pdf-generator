@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       AI PDF Generator
  * Plugin URI:        https://example.com/ai-pdf-generator
- * Description:       Генерує HTML-шаблони для PDF-документів через Gemini API та зберігає їх у прихованому CPT.
+ * Description:       Generates HTML templates for PDF documents via the Gemini API and stores them in a hidden CPT.
  * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
@@ -18,7 +18,7 @@ define( 'AIPDF_PLUGIN_FILE', __FILE__ );
 define( 'AIPDF_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIPDF_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
-// Composer-залежності (mPDF). Встановлюються командою `composer install` у папці плагіна.
+// Composer dependencies (mPDF). Installed via `composer install` inside the plugin folder.
 if ( file_exists( AIPDF_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
 	require_once AIPDF_PLUGIN_DIR . 'vendor/autoload.php';
 }
@@ -38,33 +38,33 @@ require_once AIPDF_PLUGIN_DIR . 'includes/bulk-actions.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/delivery.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/cron-cleanup.php';
 
-// Хуки активації/деактивації МУСЯТЬ реєструватися у головному файлі плагіна.
+// Activation/deactivation hooks MUST be registered in the plugin's main file.
 register_activation_hook( __FILE__, array( 'AIPDF_Cron_Cleanup', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'AIPDF_Cron_Cleanup', 'deactivate' ) );
 
 /**
- * Головний клас-завантажувач плагіна (singleton).
+ * Main plugin bootstrap class (singleton).
  */
 final class AIPDF_Plugin {
 
 	/**
-	 * Назва CPT для збережених шаблонів.
+	 * CPT name for stored templates.
 	 */
 	public const CPT = 'pdf_ai_template';
 
 	/**
-	 * Опція, у якій зберігається Gemini API Key.
+	 * Option name that stores the Gemini API key.
 	 */
 	public const OPTION_API_KEY = 'aipdf_gemini_api_key';
 
 	/**
-	 * Slug сторінки налаштувань в адмінці.
+	 * Admin settings page slug.
 	 */
 	public const ADMIN_SLUG = 'ai-pdf-generator';
 
 	/**
-	 * Дозволені значення trigger_plugin — використовуються і в промпті
-	 * до Gemini, і для валідації відповіді.
+	 * Allowed trigger_plugin values — used both in the Gemini prompt
+	 * and to validate the response.
 	 *
 	 * @var string[]
 	 */
@@ -91,7 +91,7 @@ final class AIPDF_Plugin {
 	);
 
 	/**
-	 * Дозволені значення action_type.
+	 * Allowed action_type values.
 	 *
 	 * @var string[]
 	 */
@@ -110,12 +110,12 @@ final class AIPDF_Plugin {
 	}
 
 	/**
-	 * Версія для enqueue-кешбастингу. У WP_DEBUG (типово на локальному
-	 * дев-стенді) — mtime файлу, щоб браузер ніколи не тримав старий JS/CSS
-	 * після правки. У релізі (WP_DEBUG вимкнено) — стала AIPDF_VERSION,
-	 * як і належить для нормального HTTP-кешування на проді.
+	 * Enqueue cache-busting version. Under WP_DEBUG (typically on a local
+	 * dev site) — the file's mtime, so the browser never keeps a stale
+	 * JS/CSS copy after an edit. In production (WP_DEBUG off) — the stable
+	 * AIPDF_VERSION, as expected for normal HTTP caching.
 	 *
-	 * @param string $relative_path Шлях відносно кореня плагіна, напр. 'assets/admin.js'.
+	 * @param string $relative_path Path relative to the plugin root, e.g. 'assets/admin.js'.
 	 */
 	public static function asset_version( string $relative_path ): string {
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
@@ -142,7 +142,7 @@ final class AIPDF_Plugin {
 	}
 
 	/**
-	 * Попередження, якщо mPDF ще не встановлено через Composer.
+	 * Notice shown if mPDF isn't installed via Composer yet.
 	 */
 	public function maybe_notice_missing_mpdf(): void {
 		if ( AIPDF_PDF_Renderer::is_available() || ! current_user_can( 'manage_options' ) ) {
@@ -156,7 +156,7 @@ final class AIPDF_Plugin {
 
 		printf(
 			'<div class="notice notice-error"><p><strong>AI PDF Generator:</strong> %s</p></div>',
-			esc_html__( 'Помилка: Не знайдено ядро плагіна (mPDF). Будь ласка, переконайтеся, що ви встановили плагін із готового release-архіву. Генерація шаблонів та налаштування працюють, але PDF-файли не створюватимуться.', 'ai-pdf-generator' )
+			esc_html__( 'Error: plugin core (mPDF) not found. Please make sure you installed the plugin from a ready-made release archive. Template generation and settings still work, but PDF files will not be created.', 'ai-pdf-generator' )
 		);
 	}
 }

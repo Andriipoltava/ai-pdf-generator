@@ -1,9 +1,10 @@
 <?php
 /**
- * Рендерер PDF на базі mPDF.
+ * mPDF-based PDF renderer.
  *
- * Витягує збережений ШІ-шаблон із CPT, підставляє дані у плейсхолдери
- * {{client_name}}, {{qr_code}} тощо та конвертує HTML у PDF.
+ * Pulls a saved AI template from the CPT, substitutes data into
+ * placeholders like {{client_name}}, {{qr_code}}, etc., and converts the
+ * HTML into a PDF.
  *
  * @package AI_PDF_Generator
  */
@@ -13,19 +14,19 @@ defined( 'ABSPATH' ) || exit;
 class AIPDF_PDF_Renderer {
 
 	/**
-	 * Піддиректорія в uploads для згенерованих PDF та temp-файлів mPDF.
+	 * Subdirectory in uploads for generated PDFs and mPDF's temp files.
 	 */
 	private const UPLOADS_SUBDIR = 'ai-pdf-generator';
 
 	/**
-	 * Чи встановлена бібліотека mPDF (composer install у папці плагіна).
+	 * Whether the mPDF library is installed (composer install in the plugin folder).
 	 */
 	public static function is_available(): bool {
 		return class_exists( \Mpdf\Mpdf::class );
 	}
 
 	/**
-	 * Останній опублікований шаблон для заданого тригера.
+	 * Most recently published template for the given trigger.
 	 */
 	public function find_template_by_trigger( string $trigger ): ?WP_Post {
 		$posts = get_posts(
@@ -36,7 +37,7 @@ class AIPDF_PDF_Renderer {
 				'orderby'        => 'date',
 				'order'          => 'DESC',
 				'no_found_rows'  => true,
-				'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery -- один пост, адмін-сценарій.
+				'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery -- single post, admin-triggered scenario.
 					array(
 						'key'   => '_aipdf_trigger_plugin',
 						'value' => $trigger,
@@ -49,27 +50,27 @@ class AIPDF_PDF_Renderer {
 	}
 
 	/**
-	 * Рендер шаблону в сирі PDF-байти.
+	 * Renders a template into raw PDF bytes.
 	 *
-	 * @param int                   $post_id ID поста-шаблону.
-	 * @param array<string, string> $data    Дані для плейсхолдерів (client_name, email, …).
-	 * @return string|WP_Error PDF як бінарний рядок.
+	 * @param int                   $post_id Template post ID.
+	 * @param array<string, string> $data    Placeholder data (client_name, email, …).
+	 * @return string|WP_Error PDF as a binary string.
 	 */
 	public function render( int $post_id, array $data ) {
 		if ( ! self::is_available() ) {
 			return new WP_Error(
 				'aipdf_no_mpdf',
-				__( 'Бібліотека mPDF не встановлена. Виконайте `composer install` у папці плагіна.', 'ai-pdf-generator' )
+				__( 'The mPDF library is not installed. Run `composer install` inside the plugin folder.', 'ai-pdf-generator' )
 			);
 		}
 
 		$post = get_post( $post_id );
 		if ( ! $post || AIPDF_Plugin::CPT !== $post->post_type ) {
-			return new WP_Error( 'aipdf_no_template', __( 'Шаблон не знайдено.', 'ai-pdf-generator' ) );
+			return new WP_Error( 'aipdf_no_template', __( 'Template not found.', 'ai-pdf-generator' ) );
 		}
 
-		// Порядок пріоритету (пізніше перекриває раніше):
-		// бренд → значення візуальних полів → конкретні дані події.
+		// Priority order (later overrides earlier):
+		// brand -> visual field values -> concrete event data.
 		$data = array_merge(
 			AIPDF_Brand::placeholders(),
 			AIPDF_Fields::values( AIPDF_Fields::get( $post_id ) ),
@@ -83,14 +84,14 @@ class AIPDF_PDF_Renderer {
 		try {
 			$mpdf = new \Mpdf\Mpdf( $this->build_mpdf_config( $paper_size ) );
 			$mpdf->SetTitle( $post->post_title );
-			// UTF-8 та кирилиця працюють з коробки: mode 'utf-8' + DejaVu Sans.
+			// UTF-8 and Cyrillic work out of the box: mode 'utf-8' + DejaVu Sans.
 			$mpdf->WriteHTML( $html );
 
 			$pdf = $mpdf->Output( '', \Mpdf\Output\Destination::STRING_RETURN );
 
 			AIPDF_Logger::get_instance()->info(
 				sprintf(
-					'PDF згенеровано: шаблон #%d («%s»), тригер %s, формат %s, %d байт.',
+					'PDF generated: template #%d ("%s"), trigger %s, format %s, %d bytes.',
 					$post_id,
 					$post->post_title,
 					(string) get_post_meta( $post_id, '_aipdf_trigger_plugin', true ),
@@ -102,14 +103,14 @@ class AIPDF_PDF_Renderer {
 			return $pdf;
 		} catch ( \Mpdf\MpdfException $e ) {
 			AIPDF_Logger::get_instance()->error(
-				sprintf( 'Помилка рендеру mPDF (шаблон #%d): %s', $post_id, $e->getMessage() )
+				sprintf( 'mPDF render error (template #%d): %s', $post_id, $e->getMessage() )
 			);
 
 			return new WP_Error(
 				'aipdf_mpdf_error',
 				sprintf(
 					/* translators: %s: mPDF error message. */
-					__( 'Помилка mPDF: %s', 'ai-pdf-generator' ),
+					__( 'mPDF error: %s', 'ai-pdf-generator' ),
 					$e->getMessage()
 				)
 			);
@@ -117,7 +118,7 @@ class AIPDF_PDF_Renderer {
 	}
 
 	/**
-	 * Рендер у файл в uploads. Повертає шлях та URL.
+	 * Renders to a file in uploads. Returns the path and URL.
 	 *
 	 * @return array{path:string,url:string}|WP_Error
 	 */
@@ -132,14 +133,14 @@ class AIPDF_PDF_Renderer {
 			return $dir;
 		}
 
-		// Непередбачуване ім'я файлу, щоб URL не можна було вгадати.
+		// Unpredictable filename so the URL can't be guessed.
 		$filename = sanitize_file_name(
 			sprintf( 'pdf-%d-%s.pdf', $post_id, wp_generate_password( 16, false ) )
 		);
 		$path     = trailingslashit( $dir ) . $filename;
 
-		if ( false === file_put_contents( $path, $pdf ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions -- локальний запис в uploads.
-			return new WP_Error( 'aipdf_write_failed', __( 'Не вдалося записати PDF-файл.', 'ai-pdf-generator' ) );
+		if ( false === file_put_contents( $path, $pdf ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions -- local write inside uploads.
+			return new WP_Error( 'aipdf_write_failed', __( 'Failed to write the PDF file.', 'ai-pdf-generator' ) );
 		}
 
 		$uploads = wp_upload_dir();
@@ -151,10 +152,10 @@ class AIPDF_PDF_Renderer {
 	}
 
 	/**
-	 * Конфіг mPDF: формат сторінки + temp-директорія.
+	 * mPDF config: page format + temp directory.
 	 *
-	 * «800x400» трактуємо як пікселі при 96 DPI і конвертуємо в мм
-	 * (1 px = 25.4 / 96 мм) — mPDF приймає кастомний формат у мм.
+	 * "800x400" is treated as pixels at 96 DPI and converted to mm
+	 * (1 px = 25.4 / 96 mm) — mPDF accepts a custom format in mm.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -162,7 +163,7 @@ class AIPDF_PDF_Renderer {
 		$config = array(
 			'mode'    => 'utf-8',
 			'tempDir' => $this->get_temp_dir(),
-			// DejaVu Sans — вбудований шрифт mPDF із повною кирилицею.
+			// DejaVu Sans — mPDF's bundled font with full Cyrillic support.
 			'default_font' => 'dejavusans',
 			'margin_left'   => 0,
 			'margin_right'  => 0,
@@ -180,7 +181,7 @@ class AIPDF_PDF_Renderer {
 			$known            = array( 'a3', 'a4', 'a5', 'letter', 'legal' );
 			$size             = strtolower( trim( $paper_size ) );
 			$config['format'] = in_array( $size, $known, true ) ? strtoupper( $size ) : 'A4';
-			// Для стандартних форматів залишаємо звичні поля документа.
+			// Keep normal document margins for standard paper formats.
 			$config['margin_left']   = 10;
 			$config['margin_right']  = 10;
 			$config['margin_top']    = 10;
@@ -191,18 +192,50 @@ class AIPDF_PDF_Renderer {
 	}
 
 	/**
-	 * Підстановка даних у плейсхолдери виду {{key}}.
+	 * Substitutes data into {{key}}-style placeholders.
 	 *
-	 * Значення екрануються: URL-подібні ключі (qr_code, logo, *_url) — через
-	 * esc_url, решта — esc_html. Невідомі плейсхолдери замінюються на порожньо.
+	 * Values are escaped: URL-like keys (qr_code, logo, *_url) via esc_url,
+	 * everything else via esc_html. Unknown placeholders are replaced with
+	 * an empty string.
 	 */
 	private function fill_placeholders( string $html, array $data ): string {
 		return self::substitute( $html, $data );
 	}
 
 	/**
-	 * Підстановка даних у плейсхолдери {{key}} (спільна логіка для рендеру
-	 * PDF і для превю в адмінці/Playground).
+	 * Sanitizes an AI-generated (or manually edited) HTML template.
+	 *
+	 * A plain `wp_kses_post()` would strip mPDF's native `<barcode>` tag —
+	 * it isn't part of WordPress's standard "post" allowed-tags list, since
+	 * it's an mPDF-specific PDF-rendering instruction, not real HTML. This
+	 * starts from the same trusted baseline (everything wp_kses_post()
+	 * allows: tables, inline style, <img>, etc. — still no <script>, no
+	 * event handlers) and additionally allows <barcode code type size>,
+	 * so QR codes generated via the native mPDF tag survive sanitization.
+	 */
+	public static function sanitize_html( string $html ): string {
+		$allowed = wp_kses_allowed_html( 'post' );
+
+		$allowed['barcode'] = array(
+			'code'          => true,
+			'type'          => true,
+			'size'          => true,
+			'height'        => true,
+			'color'         => true,
+			'bgcolor'       => true,
+			'text'          => true,
+			'showtext'      => true,
+			'disableborder' => true,
+			'error'         => true,
+			'quietzone'     => true,
+		);
+
+		return wp_kses( $html, $allowed );
+	}
+
+	/**
+	 * Substitutes data into {{key}} placeholders (shared logic for PDF
+	 * rendering and for the preview in the admin/Playground).
 	 *
 	 * @param array<string, string> $data
 	 */
@@ -227,8 +260,9 @@ class AIPDF_PDF_Renderer {
 	}
 
 	/**
-	 * Демо-дані для превю (бренд + типові поля подій). Спільне джерело для
-	 * редактора шаблону та Playground, щоб превю було однаковим.
+	 * Sample data for previews (brand + typical event fields). Shared
+	 * source for the template editor and the Playground, so previews look
+	 * consistent everywhere.
 	 *
 	 * @return array<string, string>
 	 */
@@ -236,34 +270,34 @@ class AIPDF_PDF_Renderer {
 		return array_merge(
 			AIPDF_Brand::sample_placeholders(),
 			array(
-				'client_name'   => 'Іван Петренко',
-				'customer_name' => 'Іван Петренко',
-				'billing_name'  => 'Іван Петренко',
-				'attendee_name' => 'Іван Петренко',
-				'user_name'     => 'Іван Петренко',
-				'donor_name'    => 'Іван Петренко',
+				'client_name'   => 'John Smith',
+				'customer_name' => 'John Smith',
+				'billing_name'  => 'John Smith',
+				'attendee_name' => 'John Smith',
+				'user_name'     => 'John Smith',
+				'donor_name'    => 'John Smith',
 				'email'         => 'client@example.com',
 				'billing_email' => 'client@example.com',
 				'user_email'    => 'client@example.com',
 				'sender_email'  => 'client@example.com',
 				'date'          => wp_date( get_option( 'date_format' ) ),
 				'order_id'      => '1024',
-				'order_total'   => '1250.00 UAH',
-				'amount'        => '1250.00 UAH',
+				'order_total'   => '$1,250.00',
+				'amount'        => '$1,250.00',
 				'ticket_id'     => 'TCK-58291',
 				'booking_date'  => wp_date( 'd.m.Y H:i' ),
-				'service_name'  => 'Консультація',
-				'event_name'    => 'Демо-подія',
-				'course_name'   => 'Демо-курс',
-				'products_table' => 'Товар A × 1 — 1250.00 UAH',
+				'service_name'  => 'Consultation',
+				'event_name'    => 'Sample Event',
+				'course_name'   => 'Sample Course',
+				'products_table' => 'Product A x 1 — $1,250.00',
 				'qr_code'       => 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=DEMO',
 			)
 		);
 	}
 
 	/**
-	 * Директорія для збережених PDF: uploads/ai-pdf-generator/.
-	 * Кладемо index.html, щоб вимкнути лістинг директорії.
+	 * Directory for stored PDFs: uploads/ai-pdf-generator/.
+	 * An index.html is placed there to disable directory listing.
 	 *
 	 * @return string|WP_Error
 	 */
@@ -272,7 +306,7 @@ class AIPDF_PDF_Renderer {
 		$dir     = trailingslashit( $uploads['basedir'] ) . self::UPLOADS_SUBDIR;
 
 		if ( ! wp_mkdir_p( $dir ) ) {
-			return new WP_Error( 'aipdf_mkdir_failed', __( 'Не вдалося створити директорію для PDF.', 'ai-pdf-generator' ) );
+			return new WP_Error( 'aipdf_mkdir_failed', __( 'Failed to create the PDF storage directory.', 'ai-pdf-generator' ) );
 		}
 
 		$index = $dir . '/index.html';
@@ -284,7 +318,7 @@ class AIPDF_PDF_Renderer {
 	}
 
 	/**
-	 * mPDF потребує writable temp-директорію (генерує кеш шрифтів).
+	 * mPDF needs a writable temp directory (it caches fonts there).
 	 */
 	private function get_temp_dir(): string {
 		$uploads = wp_upload_dir();

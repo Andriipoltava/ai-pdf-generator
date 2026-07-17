@@ -323,10 +323,11 @@ class AIPDF_Template_Editor {
 			return;
 		}
 
-		// HTML: сира розмітка, очищена так само, як при генерації (wp_kses_post
-		// зберігає таблиці, інлайнові стилі, <img>, але прибирає <script>).
+		// HTML: raw markup, sanitized the same way as on generation
+		// (keeps tables, inline styles, <img>, and the native <barcode>
+		// QR tag; strips <script> etc.).
 		if ( isset( $_POST['aipdf_html'] ) ) {
-			$html = wp_kses_post( wp_unslash( $_POST['aipdf_html'] ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- wp_kses_post і є санітизацією.
+			$html = AIPDF_PDF_Renderer::sanitize_html( wp_unslash( $_POST['aipdf_html'] ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_html() IS the sanitization.
 
 			// Оновлюємо post_content без рекурсії save_post.
 			remove_action( 'save_post_' . AIPDF_Plugin::CPT, array( $this, 'save' ), 10 );

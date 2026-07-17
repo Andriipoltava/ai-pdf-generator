@@ -1,7 +1,7 @@
 <?php
 /**
- * AJAX-обробник: приймає запит користувача, звертається до Gemini API,
- * валідує JSON-відповідь і зберігає шаблон у CPT.
+ * AJAX handler: accepts the user's request, calls the Gemini API,
+ * validates the JSON response, and saves the template to the CPT.
  *
  * @package AI_PDF_Generator
  */
@@ -11,72 +11,73 @@ defined( 'ABSPATH' ) || exit;
 class AIPDF_Ajax_Handler {
 
 	/**
-	 * Опція з назвою моделі Gemini (налаштовується в адмінці).
+	 * Option storing the Gemini model name (configurable in the admin).
 	 */
 	public const OPTION_MODEL = 'aipdf_gemini_model';
 
 	/**
-	 * Модель за замовчуванням: аліас, який Google завжди тримає
-	 * на актуальній flash-моделі — не ламається при deprecation.
+	 * Default model: an alias Google always keeps pointed at the current
+	 * flash model — doesn't break on deprecation.
 	 */
 	public const DEFAULT_MODEL = 'gemini-flash-latest';
 
 	private const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent';
 
 	public function __construct() {
-		// Лише для залогінених адмінів — wp_ajax_nopriv не реєструємо свідомо.
+		// Logged-in admins only — wp_ajax_nopriv is deliberately not registered.
 		add_action( 'wp_ajax_aipdf_chat', array( $this, 'handle_chat' ) );
 		add_action( 'wp_ajax_aipdf_save', array( $this, 'handle_save' ) );
 	}
 
 	/**
-	 * Спільна перевірка доступу + отримання ключа. Завершує запит помилкою,
-	 * якщо щось не так; інакше повертає API-ключ.
+	 * Shared access check + API key retrieval. Ends the request with an
+	 * error if something's wrong; otherwise returns the API key.
 	 */
 	private function guard_and_key(): string {
 		check_ajax_referer( 'aipdf_generate', 'nonce' );
 
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Недостатньо прав.', 'ai-pdf-generator' ) ), 403 );
+			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'ai-pdf-generator' ) ), 403 );
 		}
 
-		// Константа з wp-config.php має пріоритет над опцією в БД.
+		// A constant in wp-config.php takes priority over the DB option.
 		$api_key = defined( 'AIPDF_GEMINI_API_KEY' )
 			? (string) AIPDF_GEMINI_API_KEY
 			: (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
 		if ( '' === $api_key ) {
-			wp_send_json_error( array( 'message' => __( 'Спершу збережіть Gemini API Key у налаштуваннях.', 'ai-pdf-generator' ) ), 400 );
+			wp_send_json_error( array( 'message' => __( 'Please save your Gemini API key in Settings first.', 'ai-pdf-generator' ) ), 400 );
 		}
 
 		return $api_key;
 	}
 
 	/**
-	 * ЄДИНА точка входу чату: перше повідомлення І кожне наступне уточнення
-	 * проходять один і той самий код — це усуває клас багів, коли generate
-	 * і refine розходились (напр. референс, який передавався лише при
-	 * першій генерації, але губився при уточненні).
+	 * The SINGLE chat entry point: the first message AND every follow-up
+	 * refinement go through the same code path — this eliminates a whole
+	 * class of bugs where generate and refine used to diverge (e.g. a
+	 * reference image that was only sent on the first generation and got
+	 * lost on refinement).
 	 *
-	 * Клієнт зберігає повний `current_layout` (JSON) після кожної успішної
-	 * відповіді і надсилає його назад разом із наступним повідомленням —
-	 * це і є «пам'ять» чату, а не наростаюча історія реплік.
+	 * The client stores the full `current_layout` (JSON) after every
+	 * successful response and sends it back with the next message — that
+	 * IS the chat's "memory", rather than a growing message history.
 	 *
-	 * Пост НЕ створюється: лише превю, до явного «Зберегти шаблон».
+	 * No post is created here: only a preview, until an explicit "Save Template".
 	 */
 	public function handle_chat(): void {
 		$api_key = $this->guard_and_key();
 
 		$user_prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
 		if ( '' === $user_prompt ) {
-			wp_send_json_error( array( 'message' => __( 'Повідомлення порожнє.', 'ai-pdf-generator' ) ), 400 );
+			wp_send_json_error( array( 'message' => __( 'Message is empty.', 'ai-pdf-generator' ) ), 400 );
 		}
 
-		// Поточний макет (якщо це не перше повідомлення в чаті).
+		// Current layout (if this isn't the first message in the chat).
 		$current_layout_json = isset( $_POST['current_layout'] ) ? (string) wp_unslash( $_POST['current_layout'] ) : '';
 		$current_layout       = $this->decode_client_layout( $current_layout_json );
 
-		// Зображення-референс (WP Media) — на БУДЬ-якому повідомленні,
-		// не лише на першому: той самий код для generate і refine.
+		// Reference image (WP Media) — on ANY message, not just the first:
+		// the same code path handles both generate and refine.
 		$image = $this->build_reference_image( isset( $_POST['reference_id'] ) ? $_POST['reference_id'] : 0 );
 
 		$turn = array(
@@ -96,8 +97,9 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Обгортка інструкції для ходу-уточнення: явно передає модель поточного
-	 * макета назад разом із запитом на зміну. Саме це — «пам'ять» чату.
+	 * Wraps the instruction for a refinement turn: explicitly hands the
+	 * current layout back to the model along with the requested change.
+	 * This IS the chat's "memory".
 	 *
 	 * @param array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string,editable_fields:array} $current_layout
 	 */
@@ -112,11 +114,11 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Декодує JSON макета, надісланий клієнтом (попередній стан чату),
-	 * і проганяє через ту саму валідацію, що й відповідь AI. Будь-яка
-	 * проблема (порожньо, невалідний JSON, зіпсована структура) —
-	 * трактується як «це перше повідомлення», а не як фатальна помилка:
-	 * чат просто почне генерацію з нуля.
+	 * Decodes the layout JSON sent by the client (the chat's previous
+	 * state) and runs it through the same validation as an AI response.
+	 * Any problem (empty, invalid JSON, corrupted structure) is treated as
+	 * "this is the first message" rather than a fatal error: the chat
+	 * simply starts generation from scratch.
 	 *
 	 * @return array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string,editable_fields:array}|null
 	 */
@@ -135,25 +137,26 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Дружнє повідомлення для чату замість технічної деталі — коли AI
-	 * повернула порожню відповідь або зламаний/неповний JSON. Реальні
-	 * HTTP/мережеві помилки (ключ, ліміти) лишаються як є — вони дієві.
+	 * A friendly chat message instead of a technical detail — used when the
+	 * AI returned an empty response or broken/incomplete JSON. Real
+	 * HTTP/network errors (API key, rate limits) are passed through as-is,
+	 * since those are actionable.
 	 */
 	private function friendly_ai_error( WP_Error $error ): string {
 		$shape_errors = array( 'aipdf_bad_json', 'aipdf_missing_field', 'aipdf_empty_html', 'aipdf_gemini_empty' );
 
 		if ( in_array( $error->get_error_code(), $shape_errors, true ) ) {
-			return __( 'Не вдалося згенерувати структуру. Спробуйте переформулювати запит.', 'ai-pdf-generator' );
+			return __( 'Could not generate the layout. Try rephrasing your request.', 'ai-pdf-generator' );
 		}
 
 		return $error->get_error_message();
 	}
 
 	/**
-	 * Готує зображення-референс для Gemini inline_data.
+	 * Prepares a reference image for Gemini's inline_data.
 	 *
-	 * @param mixed $attachment_id ID вкладення з медіатеки.
-	 * @return array{mime:string,data:string}|null base64-дані або null.
+	 * @param mixed $attachment_id Media library attachment ID.
+	 * @return array{mime:string,data:string}|null base64 data, or null.
 	 */
 	private function build_reference_image( $attachment_id ): ?array {
 		$id = absint( $attachment_id );
@@ -171,14 +174,14 @@ class AIPDF_Ajax_Handler {
 			return null;
 		}
 
-		// Ліміт 5 МБ — щоб не роздувати запит до API.
+		// 5 MB limit — to avoid bloating the API request.
 		$size = filesize( $path );
 		if ( false === $size || $size > 5 * 1024 * 1024 ) {
-			AIPDF_Logger::get_instance()->warning( 'Референс-зображення завелике (>5MB) — пропущено.' );
+			AIPDF_Logger::get_instance()->warning( 'Reference image too large (>5MB) — skipped.' );
 			return null;
 		}
 
-		$bytes = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions -- локальний файл в uploads.
+		$bytes = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions -- local file inside uploads.
 		if ( false === $bytes ) {
 			return null;
 		}
@@ -190,15 +193,15 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * ЗБЕРЕЖЕННЯ фіналізованої чернетки як CPT.
+	 * SAVES the finalized draft as a CPT post.
 	 */
 	public function handle_save(): void {
 		check_ajax_referer( 'aipdf_generate', 'nonce' );
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Недостатньо прав.', 'ai-pdf-generator' ) ), 403 );
+			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'ai-pdf-generator' ) ), 403 );
 		}
 
-		// Дані чернетки з клієнта — повторно валідуємо/санітизуємо як від AI.
+		// Draft data from the client — re-validate/sanitize it just like an AI response.
 		$raw = array(
 			'trigger_plugin'  => isset( $_POST['trigger_plugin'] ) ? wp_unslash( $_POST['trigger_plugin'] ) : '',
 			'action_type'     => isset( $_POST['action_type'] ) ? wp_unslash( $_POST['action_type'] ) : '',
@@ -214,7 +217,7 @@ class AIPDF_Ajax_Handler {
 
 		$user_prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
 		if ( '' === $user_prompt ) {
-			$user_prompt = __( 'Шаблон PDF', 'ai-pdf-generator' );
+			$user_prompt = __( 'PDF Template', 'ai-pdf-generator' );
 		}
 
 		$post_id = $this->save_template( $user_prompt, $template );
@@ -233,8 +236,8 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Виклик Gemini + парсинг/валідація. Повертає нормалізований шаблон
-	 * або WP_Error (з логуванням).
+	 * Calls Gemini + parses/validates the response. Returns a normalized
+	 * template or a WP_Error (with logging).
 	 *
 	 * @param array<int, array{role:string,text:string}> $contents
 	 * @return array|WP_Error
@@ -250,7 +253,7 @@ class AIPDF_Ajax_Handler {
 		if ( is_wp_error( $template ) ) {
 			AIPDF_Logger::get_instance()->error(
 				sprintf(
-					'Невалідна відповідь Gemini (%s): %s Початок відповіді: %s',
+					'Invalid Gemini response (%s): %s Response start: %s',
 					$template->get_error_code(),
 					$template->get_error_message(),
 					mb_substr( $ai_response, 0, 500 )
@@ -262,10 +265,10 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Формує payload чернетки для клієнта (без створення поста).
+	 * Builds the draft payload for the client (without creating a post).
 	 *
-	 * @param array  $template   Нормалізований шаблон.
-	 * @param string $base_prompt Початковий запит (для title при збереженні).
+	 * @param array  $template    Normalized template.
+	 * @param string $base_prompt Original request (used as the title on save).
 	 * @return array<string, mixed>
 	 */
 	private function draft_payload( array $template, string $base_prompt ): array {
@@ -277,10 +280,10 @@ class AIPDF_Ajax_Handler {
 			'paper_size'      => $template['paper_size'],
 			'html_template'   => $template['html_template'],
 			'editable_fields' => $template['editable_fields'],
-			// Клієнт зберігає це ДОСЛІВНО і надсилає назад із наступним
-			// повідомленням чату — єдине джерело «пам'яті» стану.
+			// The client stores this VERBATIM and sends it back with the
+			// next chat message — the single source of "memory" for the state.
 			'current_layout'  => wp_json_encode( $template, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
-			// Готове превю: каркас + значення полів + демо-дані.
+			// Ready-to-show preview: skeleton + field values + sample data.
 			'preview_html'    => AIPDF_PDF_Renderer::substitute(
 				$template['html_template'],
 				array_merge(
@@ -292,19 +295,10 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Запит до Gemini API через wp_remote_post.
-	 *
-	 * Ключ передаємо у заголовку x-goog-api-key (не в URL),
-	 * щоб він не потрапляв у логи проксі/серверів.
-	 *
-	 * @param array<int, array{role:string,text:string}> $contents Ходи розмови.
-	 * @return string|WP_Error Сирий текст відповіді моделі.
-	 */
-	/**
-	 * Строга JSON-схема відповіді (Gemini structured output). Обмежує
-	 * `trigger_plugin` тим самим динамічним переліком доступних тригерів,
-	 * що й система показує в промпті, — модель фізично не зможе повернути
-	 * тригер вимкненого плагіна чи зламати форму editable_fields.
+	 * Strict JSON schema for the response (Gemini structured output).
+	 * Constrains `trigger_plugin` to the same dynamic list of available
+	 * triggers shown in the prompt — the model physically cannot return a
+	 * trigger for a disabled plugin or malform the editable_fields shape.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -343,9 +337,18 @@ class AIPDF_Ajax_Handler {
 		);
 	}
 
+	/**
+	 * Calls the Gemini API via wp_remote_post.
+	 *
+	 * The key is sent in the x-goog-api-key header (not the URL), so it
+	 * doesn't end up in proxy/server logs.
+	 *
+	 * @param array<int, array{role:string,text:string}> $contents Conversation turns.
+	 * @return string|WP_Error Raw text of the model's response.
+	 */
 	private function request_gemini( string $api_key, array $contents ) {
-		// Модель — з налаштувань (захист від deprecation у Google),
-		// фільтр залишається для програмного перевизначення.
+		// Model comes from settings (a safety net against Google
+		// deprecating it); the filter remains for programmatic overrides.
 		$model = (string) get_option( self::OPTION_MODEL, self::DEFAULT_MODEL );
 		if ( '' === trim( $model ) ) {
 			$model = self::DEFAULT_MODEL;
@@ -356,7 +359,7 @@ class AIPDF_Ajax_Handler {
 		$mapped = array();
 		foreach ( $contents as $turn ) {
 			$parts = array();
-			// Зображення-референс (inline_data) — перед текстом.
+			// Reference image (inline_data) goes before the text.
 			if ( ! empty( $turn['image']['data'] ) ) {
 				$parts[] = array(
 					'inline_data' => array(
@@ -381,16 +384,18 @@ class AIPDF_Ajax_Handler {
 			),
 			'contents'           => $mapped,
 			'generationConfig'   => array(
-				// response_mime_type сам собою лише «просить» JSON-подібний текст —
-				// на практиці Gemini подеколи повертає синтаксично зламаний JSON
-				// (напр. зайву закриваючу дужку). response_schema змушує API
-				// гарантувати структурно коректний JSON саме цієї форми.
+				// response_mime_type by itself only "asks" for JSON-ish
+				// text — in practice Gemini occasionally returns
+				// syntactically broken JSON (e.g. a stray closing brace).
+				// response_schema forces the API to guarantee
+				// structurally valid JSON in exactly this shape.
 				'response_mime_type' => 'application/json',
 				'response_schema'    => $this->response_schema(),
 				'temperature'        => 0.4,
 				'maxOutputTokens'    => 16384,
-				// Thinking вимкнено: для генерації шаблону воно зайве,
-				// а «думки» з'їдають ліміт токенів і обрізають JSON.
+				// Thinking is disabled: it's unnecessary for template
+				// generation, and "thoughts" eat into the token budget
+				// and can truncate the JSON.
 				'thinkingConfig'     => array( 'thinkingBudget' => 0 ),
 			),
 		);
@@ -415,12 +420,12 @@ class AIPDF_Ajax_Handler {
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
 
 		if ( 200 !== $code ) {
-			$api_message = $data['error']['message'] ?? __( 'Невідома помилка API.', 'ai-pdf-generator' );
+			$api_message = $data['error']['message'] ?? __( 'Unknown API error.', 'ai-pdf-generator' );
 			return new WP_Error(
 				'aipdf_gemini_http',
 				sprintf(
 					/* translators: 1: HTTP code, 2: API error message. */
-					__( 'Gemini API повернув помилку %1$d: %2$s', 'ai-pdf-generator' ),
+					__( 'Gemini API returned error %1$d: %2$s', 'ai-pdf-generator' ),
 					$code,
 					$api_message
 				)
@@ -429,13 +434,13 @@ class AIPDF_Ajax_Handler {
 
 		$candidate = $data['candidates'][0] ?? array();
 
-		// Діагностика обрізаних/заблокованих відповідей — одразу в лог.
+		// Diagnose truncated/blocked responses right away, into the log.
 		$finish_reason = $candidate['finishReason'] ?? '';
 		if ( '' !== $finish_reason && 'STOP' !== $finish_reason ) {
-			AIPDF_Logger::get_instance()->warning( 'Gemini finishReason=' . $finish_reason . ' — відповідь може бути неповною.' );
+			AIPDF_Logger::get_instance()->warning( 'Gemini finishReason=' . $finish_reason . ' — the response may be incomplete.' );
 		}
 
-		// Склеюємо всі текстові частини (thinking-моделі можуть ділити відповідь).
+		// Concatenate all text parts (thinking models can split the response).
 		$text = '';
 		foreach ( (array) ( $candidate['content']['parts'] ?? array() ) as $part ) {
 			if ( empty( $part['thought'] ) && isset( $part['text'] ) ) {
@@ -444,33 +449,33 @@ class AIPDF_Ajax_Handler {
 		}
 
 		if ( '' === $text ) {
-			return new WP_Error( 'aipdf_gemini_empty', __( 'Gemini повернув порожню відповідь.', 'ai-pdf-generator' ) );
+			return new WP_Error( 'aipdf_gemini_empty', __( 'Gemini returned an empty response.', 'ai-pdf-generator' ) );
 		}
 
 		return $text;
 	}
 
 	/**
-	 * Парсинг та валідація JSON від моделі.
+	 * Parses and validates the JSON from the model.
 	 *
 	 * @return array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string}|WP_Error
 	 */
 	private function parse_and_validate( string $raw ) {
-		// Захист від «зайвої ввічливості» моделі: зрізаємо можливі ```json … ``` огорожі.
+		// Guard against the model's "over-politeness": strip any ```json … ``` fences.
 		$raw = trim( $raw );
 		$raw = preg_replace( '/^```(?:json)?\s*|\s*```$/', '', $raw );
 
 		$parsed = json_decode( $raw, true );
 		if ( ! is_array( $parsed ) ) {
-			return new WP_Error( 'aipdf_bad_json', __( 'Відповідь моделі не є валідним JSON.', 'ai-pdf-generator' ) );
+			return new WP_Error( 'aipdf_bad_json', __( 'The model\'s response is not valid JSON.', 'ai-pdf-generator' ) );
 		}
 
 		return $this->normalize_template( $parsed );
 	}
 
 	/**
-	 * Валідація/санітизація структури шаблону (спільна для відповіді Gemini
-	 * і для чернетки, що приходить від клієнта при збереженні).
+	 * Validates/sanitizes the template structure (shared between the
+	 * Gemini response and a draft submitted by the client on save).
 	 *
 	 * @param array<string, mixed> $parsed
 	 * @return array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string,editable_fields:array}|WP_Error
@@ -482,15 +487,15 @@ class AIPDF_Ajax_Handler {
 					'aipdf_missing_field',
 					sprintf(
 						/* translators: %s: field name. */
-						__( 'У відповіді моделі відсутнє поле «%s».', 'ai-pdf-generator' ),
+						__( 'The model\'s response is missing the "%s" field.', 'ai-pdf-generator' ),
 						$field
 					)
 				);
 			}
 		}
 
-		// trigger_plugin та action_type — лише зі списку дозволених.
-		// AIPDF_Triggers::sanitize зберігає «/» (elementor_pro/forms/new_record).
+		// trigger_plugin and action_type — only from the allowed list.
+		// AIPDF_Triggers::sanitize preserves "/" (elementor_pro/forms/new_record).
 		$trigger = AIPDF_Triggers::sanitize( $parsed['trigger_plugin'] );
 		if ( ! in_array( $trigger, AIPDF_Triggers::all(), true ) ) {
 			$trigger = 'manual_generation';
@@ -501,34 +506,35 @@ class AIPDF_Ajax_Handler {
 			$action = 'download_link';
 		}
 
-		// paper_size: A4 / Letter / 800x400 тощо — тільки безпечні символи.
+		// paper_size: A4 / Letter / 800x400 etc. — safe characters only.
 		$paper = sanitize_text_field( $parsed['paper_size'] );
 		if ( ! preg_match( '/^[A-Za-z0-9x\- ]{1,20}$/', $paper ) ) {
 			$paper = 'A4';
 		}
 
-		// Санітизація HTML: wp_kses_post прибирає <script>, onclick тощо,
-		// але зберігає таблиці, інлайнові style та <img>.
-		$html = wp_kses_post( $parsed['html_template'] );
+		// Sanitize the HTML: strips <script>, onclick, etc., but keeps
+		// tables, inline style, <img>, and mPDF's native <barcode> tag
+		// (a plain wp_kses_post() would strip <barcode> as an unknown tag).
+		$html = AIPDF_PDF_Renderer::sanitize_html( $parsed['html_template'] );
 		if ( '' === trim( $html ) ) {
-			return new WP_Error( 'aipdf_empty_html', __( 'HTML-шаблон порожній після санітизації.', 'ai-pdf-generator' ) );
+			return new WP_Error( 'aipdf_empty_html', __( 'The HTML template is empty after sanitization.', 'ai-pdf-generator' ) );
 		}
 
-		// Візуальні поля (кольори, заголовки, підписи) — джерело правди для
-		// редагування. Каркас використовує їх як {{field_key}}.
+		// Visual fields (colors, headings, captions) — the source of truth
+		// for editing. The skeleton references them as {{field_key}}.
 		$fields = AIPDF_Fields::normalize( $parsed['editable_fields'] ?? array() );
 
-		// Детерміністичний запобіжник: gemini-flash подеколи хардкодить #hex
-		// прямо в розмітці попри заборону в промпті. Незалежно від того,
-		// послухалась AI чи ні, — знаходимо будь-які hex-кольори, що лишились
-		// у HTML, виносимо їх у {{auto_color_N}} і додаємо color-поле.
-		// Редактор лишається куленепробивним навіть при непослуху моделі.
+		// Deterministic safety net: gemini-flash occasionally hardcodes
+		// #hex colors directly in the markup despite the prompt forbidding
+		// it. Regardless of whether the AI complied, find any hex colors
+		// still in the HTML, extract them into {{auto_color_N}}, and add a
+		// color field. The editor stays bulletproof even when the model doesn't comply.
 		$extracted = AIPDF_Fields::extract_hardcoded_colors( $html, $fields );
 		$html      = $extracted['html'];
 		$fields    = array_merge( $fields, $extracted['fields'] );
 
-		// Відкидаємо «сирітські» поля, яких немає в каркасі, — щоб у редакторі
-		// не було контролів, що ні на що не впливають.
+		// Drop "orphaned" fields not present in the skeleton, so the editor
+		// doesn't show controls that don't affect anything.
 		$fields = array_values(
 			array_filter(
 				$fields,
@@ -548,10 +554,10 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Створення поста у CPT та збереження meta.
+	 * Creates the CPT post and saves its meta.
 	 *
-	 * @param array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string} $template Валідовані дані.
-	 * @return int|WP_Error ID нового поста.
+	 * @param array{trigger_plugin:string,action_type:string,paper_size:string,html_template:string} $template Validated data.
+	 * @return int|WP_Error New post ID.
 	 */
 	private function save_template( string $user_prompt, array $template ) {
 		$post_id = wp_insert_post(
@@ -577,12 +583,12 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Системна інструкція для Gemini: правила вибору тригера
-	 * та вимоги до HTML під PDF-конвертери.
+	 * System instruction for Gemini: trigger-selection rules and HTML
+	 * requirements for the PDF converter.
 	 */
 	private function get_system_prompt(): string {
-		// Каталог доступних тригерів із їхніми контекстними плейсхолдерами —
-		// щоб AI обирав лише наявну подію й використовував саме її дані.
+		// Catalog of available triggers with their contextual placeholders
+		// — so the AI only picks an event that's actually present and uses its data.
 		$lines = array();
 		foreach ( AIPDF_Triggers::available() as $key ) {
 			$ph = implode( ', ', AIPDF_Triggers::placeholders( $key ) );
@@ -614,6 +620,11 @@ HTML RULES (html_template):
    - Logo: <img src="{{logo_url}}" width="200" height="70" alt="Logo" /> (never write the word "LOGO" as text).
    - Brand/accent color: use {{brand_color}} inside inline styles, e.g. style="color: {{brand_color}}" or style="background-color: {{brand_color}}".
    - Seller/company details: {{company_name}}, {{company_address}}, {{company_email}}. Do NOT invent a company name like "WooCommerce Store".
+7. QR CODES — mandatory native format. This PDF converter is mPDF, which generates QR codes natively — you do NOT need <img> tags or any external API/service for QR codes. If the user requests a QR code (or a ticket/badge/pass that implies one), DO NOT use an <img> tag and DO NOT reference {{qr_code}} as an image URL. You MUST use mPDF's native barcode tag instead:
+   <barcode code="{{placeholder_or_url}}" type="QR" size="1" />
+   You can use any dynamic placeholder inside the "code" attribute, for example:
+   <barcode code="{{ticket_id}}" type="QR" size="1.5" />
+   Adjust "size" from 0.5 (small) to 2.0 (large) depending on the document's layout and importance of the code.
 
 EDITABLE FIELDS (editable_fields) — the KEY feature. The user must be able to visually edit the template WITHOUT touching HTML. So:
 - Extract every STATIC, human-editable piece of content into an editable field: headings/titles, captions, static labels ("Invoice", "Thank you", "Total:"), accent colors, background colors, footer notes, button texts. NOT dynamic data (client_name, order_id, dates) — those stay as data placeholders from the trigger list.
@@ -623,12 +634,12 @@ EDITABLE FIELDS (editable_fields) — the KEY feature. The user must be able to 
 - If a reference image is attached, derive the color field VALUES from the dominant colors you actually see in that image.
 - Return an "editable_fields" array. Each item: {"key","type","label","value"}.
   - "type" is one of: "color" (hex value like #1a1a2e), "text" (short single line), "textarea" (multi-line).
-  - "label" is a short human label in the user's language (e.g. "Заголовок", "Колір акценту").
+  - "label" is a short human label in the user's language (e.g. "Heading", "Accent Color").
   - "value" is a sensible default that matches what you put in the HTML.
 - Aim for 3–8 editable fields. Do NOT duplicate brand placeholders ({{logo_url}}, {{brand_color}}, {{company_name}}…) as editable fields — those are managed separately.
 
 OUTPUT FORMAT: respond with VALID JSON ONLY, no Markdown fences, no surrounding text:
-{"trigger_plugin": "...", "action_type": "attach_to_email or download_link", "paper_size": "A4 | Letter | 800x400 | ...", "html_template": "HTML skeleton using {{field_key}} and data placeholders", "editable_fields": [{"key":"heading","type":"text","label":"Заголовок","value":"ІНВОЙС"},{"key":"accent_color","type":"color","label":"Колір акценту","value":"#1a1a2e"}]}
+{"trigger_plugin": "...", "action_type": "attach_to_email or download_link", "paper_size": "A4 | Letter | 800x400 | ...", "html_template": "HTML skeleton using {{field_key}} and data placeholders", "editable_fields": [{"key":"heading","type":"text","label":"Heading","value":"INVOICE"},{"key":"accent_color","type":"color","label":"Accent Color","value":"#1a1a2e"}]}
 PROMPT;
 	}
 }

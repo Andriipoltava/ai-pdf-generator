@@ -1,6 +1,6 @@
 <?php
 /**
- * Реєстрація прихованого Custom Post Type `pdf_ai_template`.
+ * Registers the hidden `pdf_ai_template` Custom Post Type.
  *
  * @package AI_PDF_Generator
  */
@@ -14,9 +14,9 @@ class AIPDF_CPT_Register {
 	}
 
 	/**
-	 * CPT не є публічним (не має фронтенд-сторінок, не потрапляє в пошук),
-	 * але має UI в адмінці як підпункт меню плагіна — щоб можна було
-	 * переглядати та видаляти згенеровані шаблони.
+	 * The CPT isn't public (no front-end pages, not searchable), but it
+	 * has an admin UI as a submenu of the plugin's menu — so generated
+	 * templates can be viewed and deleted.
 	 */
 	public function register_cpt(): void {
 		register_post_type(
@@ -25,10 +25,10 @@ class AIPDF_CPT_Register {
 				'labels'              => array(
 					'name'          => __( 'PDF Templates', 'ai-pdf-generator' ),
 					'singular_name' => __( 'PDF Template', 'ai-pdf-generator' ),
-					'menu_name'     => __( 'Шаблони', 'ai-pdf-generator' ),
-					'edit_item'     => __( 'Редагувати шаблон', 'ai-pdf-generator' ),
-					'search_items'  => __( 'Шукати шаблони', 'ai-pdf-generator' ),
-					'not_found'     => __( 'Шаблонів не знайдено', 'ai-pdf-generator' ),
+					'menu_name'     => __( 'Templates', 'ai-pdf-generator' ),
+					'edit_item'     => __( 'Edit Template', 'ai-pdf-generator' ),
+					'search_items'  => __( 'Search Templates', 'ai-pdf-generator' ),
+					'not_found'     => __( 'No templates found', 'ai-pdf-generator' ),
 				),
 				'public'              => false,
 				'publicly_queryable'  => false,
@@ -37,21 +37,21 @@ class AIPDF_CPT_Register {
 				'show_in_rest'        => false,
 				'has_archive'         => false,
 				'rewrite'             => false,
-				// UI лише для адмінів, у меню плагіна.
+				// UI for admins only, under the plugin's menu.
 				'show_ui'             => true,
 				'show_in_menu'        => AIPDF_Plugin::ADMIN_SLUG,
-				'supports'            => array( 'title' ), // Без 'editor': він псує HTML-шаблон; свій редактор — AIPDF_Template_Editor.
+				'supports'            => array( 'title' ), // No 'editor': it mangles the HTML template; our own editor is AIPDF_Template_Editor.
 				'capability_type'     => 'post',
 				'capabilities'        => array(
-					'create_posts' => 'do_not_allow', // Створення лише через AJAX-генератор.
+					'create_posts' => 'do_not_allow', // Creation only via the AJAX generator.
 				),
 				'map_meta_cap'        => true,
 			)
 		);
 
-		// Реєструємо meta-поля з sanitize-колбеками.
-		// _aipdf_trigger_plugin: власний санітайзер, бо ключі-хуки містять «/»
-		// (sanitize_meta застосовує цей колбек навіть при update_post_meta).
+		// Register meta fields with sanitize callbacks.
+		// _aipdf_trigger_plugin: custom sanitizer, because hook-based keys
+		// contain "/" (sanitize_meta applies this callback even on update_post_meta).
 		$meta_fields = array(
 			'_aipdf_trigger_plugin' => array( 'AIPDF_Triggers', 'sanitize' ),
 			'_aipdf_action_type'    => 'sanitize_key',

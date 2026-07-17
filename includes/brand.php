@@ -1,11 +1,11 @@
 <?php
 /**
- * Брендинг: логотип, колір, реквізити компанії.
+ * Branding: logo, color, company details.
  *
- * Виносить «хардкод» із шаблонів у налаштування, щоб лого/кольори/поля
- * можна було міняти без правки HTML. Значення підставляються у плейсхолдери
- * {{logo_url}}, {{brand_color}}, {{company_name}}, {{company_address}},
- * {{company_email}} під час рендеру PDF.
+ * Moves "hardcoded" values out of templates and into settings, so the
+ * logo/colors/details can be changed without editing HTML. Values are
+ * substituted into the {{logo_url}}, {{brand_color}}, {{company_name}},
+ * {{company_address}}, {{company_email}} placeholders when rendering a PDF.
  *
  * @package AI_PDF_Generator
  */
@@ -21,12 +21,12 @@ class AIPDF_Brand {
 	public const OPT_EMAIL   = 'aipdf_brand_email';
 
 	/**
-	 * Колір за замовчуванням, якщо бренд не налаштований.
+	 * Default color if no brand color has been configured.
 	 */
 	public const DEFAULT_COLOR = '#1a1a2e';
 
 	/**
-	 * Значення бренду як дані для плейсхолдерів.
+	 * Brand values as placeholder data.
 	 *
 	 * @return array<string, string>
 	 */
@@ -43,8 +43,8 @@ class AIPDF_Brand {
 	}
 
 	/**
-	 * Плейсхолдери бренду з демо-значеннями (для превю та тестового PDF,
-	 * коли реальні реквізити ще не заповнені).
+	 * Brand placeholders with sample values (for preview and the test PDF,
+	 * before real company details have been filled in).
 	 *
 	 * @return array<string, string>
 	 */
@@ -55,11 +55,11 @@ class AIPDF_Brand {
 			'logo_url'        => 'https://placehold.co/240x80/' . ltrim( self::DEFAULT_COLOR, '#' ) . '/ffffff?text=LOGO',
 			'brand_color'     => self::DEFAULT_COLOR,
 			'company_name'    => 'Your Company LLC',
-			'company_address' => 'вул. Хрещатик, 1, Київ',
+			'company_address' => '123 Main St, Springfield',
 			'company_email'   => 'hello@example.com',
 		);
 
-		// Реальні значення мають пріоритет над демо.
+		// Real values take priority over the sample ones.
 		foreach ( $real as $key => $value ) {
 			if ( '' !== $value ) {
 				$defaults[ $key ] = $value;

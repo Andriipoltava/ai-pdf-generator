@@ -1,10 +1,11 @@
 <?php
 /**
- * Візуальні поля шаблону (editable_fields).
+ * Visual template fields (editable_fields).
  *
- * JSON — джерело правди: Gemini повертає HTML-каркас із плейсхолдерами
- * {{field_key}} та масив полів (тип, лейбл, значення). Значення зберігаються
- * окремою post meta як JSON і підставляються в каркас при рендері.
+ * JSON is the source of truth: Gemini returns an HTML skeleton with
+ * {{field_key}} placeholders plus an array of fields (type, label, value).
+ * Values are stored in a separate post meta field as JSON and substituted
+ * into the skeleton when rendering.
  *
  * @package AI_PDF_Generator
  */
@@ -16,14 +17,14 @@ class AIPDF_Fields {
 	public const META = '_aipdf_editable_fields';
 
 	/**
-	 * Підтримувані типи полів редактора.
+	 * Supported editor field types.
 	 */
 	public const TYPES = array( 'color', 'text', 'textarea' );
 
 	/**
-	 * Нормалізує/санітизує список полів (із AI-JSON або з POST).
+	 * Normalizes/sanitizes a list of fields (from AI JSON or from POST).
 	 *
-	 * @param mixed $raw Сирий масив визначень полів.
+	 * @param mixed $raw Raw array of field definitions.
 	 * @return array<int, array{key:string,type:string,label:string,value:string}>
 	 */
 	public static function normalize( $raw ): array {
@@ -56,7 +57,7 @@ class AIPDF_Fields {
 	}
 
 	/**
-	 * Санітизація значення поля відповідно до типу.
+	 * Sanitizes a field value according to its type.
 	 */
 	public static function sanitize_value( string $type, $value ): string {
 		if ( 'color' === $type ) {
@@ -67,16 +68,17 @@ class AIPDF_Fields {
 	}
 
 	/**
-	 * Детерміністичний «запобіжник» від хардкоду кольорів. gemini-flash
-	 * подеколи хардкодить #hex просто в розмітці, попри пряму заборону
-	 * в промпті. Незалежно від слухняності моделі — сканує HTML на предмет
-	 * hex-кольорів у значеннях атрибутів (style="...", bgcolor="...",
-	 * color="..."), замінює кожен УНІКАЛЬНИЙ колір на {{auto_color_N}}
-	 * і повертає готове color-поле для editable_fields. Однакові кольори
-	 * (той самий hex у кількох місцях) отримують один спільний плейсхолдер.
+	 * A deterministic safety net against hardcoded colors. gemini-flash
+	 * occasionally hardcodes a #hex color right in the markup, despite the
+	 * prompt explicitly forbidding it. Regardless of how well the model
+	 * complies, this scans the HTML for hex colors inside attribute values
+	 * (style="...", bgcolor="...", color="..."), replaces every UNIQUE
+	 * color with {{auto_color_N}}, and returns a ready-made color field for
+	 * editable_fields. Identical colors (the same hex in multiple places)
+	 * share one placeholder.
 	 *
-	 * @param string                                              $html            Уже санітизований (wp_kses_post) HTML.
-	 * @param array<int, array{key:string,type:string,label:string,value:string}> $existing_fields Поля, які вже задекларувала AI — щоб не зіткнутись ключами.
+	 * @param string                                                                $html            Already-sanitized (wp_kses_post) HTML.
+	 * @param array<int, array{key:string,type:string,label:string,value:string}> $existing_fields Fields the AI already declared — to avoid key collisions.
 	 * @return array{html:string, fields:array<int, array{key:string,type:string,label:string,value:string}>}
 	 */
 	public static function extract_hardcoded_colors( string $html, array $existing_fields ): array {
@@ -87,7 +89,7 @@ class AIPDF_Fields {
 			}
 		}
 
-		$hex_to_key = array(); // нормалізований hex => вже присвоєний ключ (дедуп на весь документ).
+		$hex_to_key = array(); // normalized hex => already-assigned key (dedup across the whole document).
 		$new_fields = array();
 		$counter    = 0;
 
@@ -112,7 +114,7 @@ class AIPDF_Fields {
 								'type'  => 'color',
 								'label' => sprintf(
 									/* translators: %d: sequential number of the auto-detected color. */
-									__( 'Колір %d (виявлено автоматично)', 'ai-pdf-generator' ),
+									__( 'Color %d (auto-detected)', 'ai-pdf-generator' ),
 									count( $new_fields ) + 1
 								),
 								'value' => $normalized,
@@ -124,7 +126,7 @@ class AIPDF_Fields {
 					$attr_match[3]
 				);
 
-				// Групи 1 і 2 — ім'я атрибута й «=» з пробілами саме такі, якими були.
+				// Groups 1 and 2 are the attribute name and "=" with whatever spacing was there.
 				return $attr_match[1] . $attr_match[2] . '"' . $value . '"';
 			},
 			$html
@@ -134,7 +136,7 @@ class AIPDF_Fields {
 	}
 
 	/**
-	 * Нормалізує hex-колір (3 або 6 знаків, з «#» або без) у формат «#rrggbb».
+	 * Normalizes a hex color (3 or 6 digits, with or without "#") into "#rrggbb".
 	 */
 	private static function expand_hex( string $hex ): string {
 		$hex = ltrim( strtolower( $hex ), '#' );
@@ -145,7 +147,7 @@ class AIPDF_Fields {
 	}
 
 	/**
-	 * Мапа key => value для підстановки в плейсхолдери.
+	 * key => value map for substituting placeholders.
 	 *
 	 * @param array<int, array{key:string,value:string}> $fields
 	 * @return array<string, string>
@@ -161,7 +163,7 @@ class AIPDF_Fields {
 	}
 
 	/**
-	 * Поля шаблону з БД (нормалізовані).
+	 * Template fields from the DB (normalized).
 	 *
 	 * @return array<int, array{key:string,type:string,label:string,value:string}>
 	 */
@@ -172,14 +174,14 @@ class AIPDF_Fields {
 	}
 
 	/**
-	 * Збереження полів у БД як JSON.
+	 * Saves fields to the DB as JSON.
 	 *
 	 * @param array<int, array<string, mixed>> $fields
 	 */
 	public static function save( int $post_id, array $fields ): void {
-		// Зберігаємо кирилицю як UTF-8 (без \uXXXX) і слешимо перед записом:
-		// update_post_meta застосовує wp_unslash, який інакше зрізав би
-		// бекслеші JSON-екранування та ламав би структуру.
+		// Store Cyrillic/multibyte text as plain UTF-8 (no \uXXXX escapes) and
+		// slash it before writing: update_post_meta runs wp_unslash, which
+		// would otherwise strip the JSON escaping backslashes and corrupt it.
 		$json = wp_json_encode( self::normalize( $fields ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
 		update_post_meta( $post_id, self::META, wp_slash( (string) $json ) );
 	}
