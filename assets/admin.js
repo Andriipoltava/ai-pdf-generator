@@ -1,19 +1,19 @@
 /**
- * AI PDF Generator — Playground як чат із живим прев'ю.
+ * AI PDF Generator — the Playground as a chat with a live preview.
  *
- * Стан розмови — це НЕ список повідомлень, а один об'єкт `chat.layout`
- * (поточний макет: trigger_plugin/action_type/paper_size/html_template/
- * editable_fields). Кожне повідомлення (перше й будь-яке уточнення)
- * надсилає цей макет назад на сервер разом із новим текстом — це і є
- * «пам'ять» чату. Прев'ю та поля оновлюються ЛИШЕ після успішної відповіді;
- * при помилці попередній стан лишається недоторканим, а в чат додається
- * повідомлення про помилку.
+ * Conversation state is NOT a list of messages, but a single `chat.layout`
+ * object (the current layout: trigger_plugin/action_type/paper_size/
+ * html_template/editable_fields). Every message (the first one and any
+ * refinement) sends this layout back to the server along with the new
+ * text — that IS the chat's "memory". The preview and fields only update
+ * after a successful response; on error the previous state is left
+ * untouched, and an error message is appended to the chat instead.
  */
 ( function ( $ ) {
 	'use strict';
 
 	$( function () {
-		// ---------- Вкладки (nav-tab) ----------
+		// ---------- Tabs (nav-tab) ----------
 		function activateTab( name ) {
 			if ( ! $( '#aipdf-tab-' + name ).length ) {
 				name = 'playground';
@@ -32,13 +32,13 @@
 			e.preventDefault();
 			var name = $( this ).data( 'tab' );
 			activateTab( name );
-			// Хеш в URL — щоб вкладка переживала F5 і редиректи.
+			// Hash in the URL — so the tab survives F5 and redirects.
 			if ( window.history.replaceState ) {
 				window.history.replaceState( null, '', '#' + name );
 			}
 		} );
 
-		// Початкова вкладка: хеш → після збереження налаштувань → після очищення логу.
+		// Initial tab: hash -> after saving settings -> after clearing the log.
 		( function () {
 			var initial = ( window.location.hash || '' ).replace( '#', '' ),
 				search  = window.location.search;
@@ -53,7 +53,7 @@
 			activateTab( initial || 'playground' );
 		}() );
 
-		// ---------- Брендинг: вибір логотипу через медіатеку ----------
+		// ---------- Branding: choosing a logo via the media library ----------
 		( function () {
 			var frame,
 				$url     = $( '#aipdf-logo-url' ),
@@ -67,8 +67,8 @@
 					return;
 				}
 				frame = wp.media( {
-					title:    'Логотип',
-					button:   { text: 'Використати' },
+					title:    'Logo',
+					button:   { text: 'Use this image' },
 					library:  { type: 'image' },
 					multiple: false
 				} );
@@ -89,7 +89,7 @@
 			} );
 		}() );
 
-		// ==================== ЧАТ (Playground) ====================
+		// ==================== CHAT (Playground) ====================
 
 		var $history   = $( '#aipdf-chat-history' ),
 			$input     = $( '#aipdf-chat-input' ),
@@ -109,11 +109,11 @@
 			sample     = aipdfData.sample || {};
 
 		if ( ! $history.length ) {
-			return; // Не Playground-вкладка (захист від подвійної ініціалізації в інших контекстах).
+			return; // Not the Playground tab (guards against double init elsewhere).
 		}
 
-		// Єдиний стан чату: поточний макет + JSON, який сервер повернув
-		// останнім і який ми надсилаємо назад без змін на наступному ході.
+		// Single chat state: the current layout + the JSON the server last
+		// returned, which we send back unchanged on the next turn.
 		var chat = {
 			layout:     null,
 			layoutJson: '',
@@ -130,11 +130,11 @@
 		}
 
 		/**
-		 * Додає бульбашку в історію чату.
+		 * Appends a bubble to the chat history.
 		 *
 		 * @param {string} role user | ai | error | pending
-		 * @param {string} html Вже екранований HTML для вставки.
-		 * @return {jQuery} Створений елемент (щоб pending-бульбашку можна було прибрати).
+		 * @param {string} html Already-escaped HTML to insert.
+		 * @return {jQuery} The created element (so a pending bubble can be removed later).
 		 */
 		function appendMessage( role, html ) {
 			var $bubble = $( '<div/>' )
@@ -167,7 +167,7 @@
 			return $bubble;
 		}
 
-		// ---------- Референс-зображення (прикріплюється до наступного повідомлення) ----------
+		// ---------- Reference image (attached to the next message) ----------
 		( function () {
 			var frame;
 
@@ -178,8 +178,8 @@
 					return;
 				}
 				frame = wp.media( {
-					title:    'Референс-зображення',
-					button:   { text: 'Використати' },
+					title:    'Reference Image',
+					button:   { text: 'Use this image' },
 					library:  { type: 'image' },
 					multiple: false
 				} );
@@ -206,7 +206,7 @@
 			$refRemove.hide();
 		}
 
-		// ---------- Плейсхолдери та швидкий старт — вставляють у поле чату ----------
+		// ---------- Placeholders and quick-start insert into the chat field ----------
 		$( '#aipdf-quickstart' ).on( 'change', function () {
 			var text = $( this ).val();
 			if ( text ) {
@@ -237,7 +237,7 @@
 			}, 350, this );
 		} );
 
-		// ---------- Живе клієнтське превю: підстановка {{key}} без AJAX ----------
+		// ---------- Live client-side preview: {{key}} substitution, no AJAX ----------
 		function fillPlaceholders( html, fieldValues ) {
 			var data = $.extend( {}, sample, fieldValues );
 			return html.replace( /\{\{\s*([a-z0-9_]+)\s*\}\}/gi, function ( match, key ) {
@@ -266,7 +266,7 @@
 			$previewPh.hide();
 		}
 
-		// ---------- Динамічні поля editable_fields (кольори/тексти) ----------
+		// ---------- Dynamic editable_fields controls (colors/text) ----------
 		function updateFieldValue( idx, value ) {
 			if ( chat.layout && chat.layout.editable_fields && chat.layout.editable_fields[ idx ] ) {
 				chat.layout.editable_fields[ idx ].value = value;
@@ -337,8 +337,8 @@
 		}
 
 		/**
-		 * Застосовує УСПІШНУ відповідь сервера як новий стан чату.
-		 * Викликається лише при success — інакше попередній стан незмінний.
+		 * Applies a SUCCESSFUL server response as the new chat state.
+		 * Only called on success — otherwise the previous state is untouched.
 		 */
 		function applyLayout( d ) {
 			chat.layout = {
@@ -348,7 +348,7 @@
 				html_template:   d.html_template,
 				editable_fields: d.editable_fields || []
 			};
-			// Дослівний JSON із сервера — саме його надсилаємо назад наступного разу.
+			// The verbatim JSON from the server — this is exactly what we send back next time.
 			chat.layoutJson = d.current_layout || JSON.stringify( chat.layout );
 
 			renderPreview();
@@ -403,7 +403,7 @@
 					$pending.remove();
 
 					if ( ! response || ! response.success ) {
-						// НЕ чіпаємо layout/preview/fields — лише повідомлення в чат.
+						// Don't touch layout/preview/fields — only append a chat message.
 						appendMessage( 'error', escapeHtml( ( response && response.data && response.data.message ) || i18n.error ) );
 						return;
 					}
@@ -412,7 +412,7 @@
 					appendMessage(
 						'ai',
 						escapeHtml(
-							( i18n.updatedMsg || 'Готово: %1$s / %2$s / %3$s' )
+							( i18n.updatedMsg || 'Done: %1$s / %2$s / %3$s' )
 								.replace( '%1$s', response.data.trigger_plugin )
 								.replace( '%2$s', actionLabel( response.data.action_type ) )
 								.replace( '%3$s', response.data.paper_size )
@@ -425,13 +425,13 @@
 					if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
 						message = xhr.responseJSON.data.message;
 					}
-					// І тут теж НЕ чіпаємо попередній стан.
+					// Again: don't touch the previous state here either.
 					appendMessage( 'error', escapeHtml( message ) );
 				} )
 				.always( function () {
 					setBusy( false );
-					// Референс — одноразовий: додається лише до щойно відправленого
-					// повідомлення, для наступного треба прикріпити знову.
+					// The reference is one-shot: attached only to the message
+					// just sent; re-attach it for the next one if needed.
 					clearReference();
 					$input.val( '' ).trigger( 'focus' );
 				} );
@@ -445,7 +445,7 @@
 			}
 		} );
 
-		// ---------- Зберегти шаблон (фіналізація поточного макета як CPT) ----------
+		// ---------- Save Template (finalizes the current layout as a CPT post) ----------
 		$saveBtn.on( 'click', function () {
 			if ( ! chat.layout ) {
 				return;
@@ -469,7 +469,7 @@
 						return;
 					}
 					var d = response.data;
-					$( '#aipdf-saved-msg' ).text( ( i18n.saved || 'Збережено' ) + ' (#' + d.post_id + ').' );
+					$( '#aipdf-saved-msg' ).text( ( i18n.saved || 'Saved' ) + ' (#' + d.post_id + ').' );
 					$( '#aipdf-edit-link' ).attr( 'href', d.edit_link );
 					$( '#aipdf-test-pdf-link' ).attr( 'href', d.test_pdf_url ).toggle( !! d.pdf_available );
 					$saved.show();
@@ -486,7 +486,7 @@
 				} );
 		} );
 
-		// Привітальне повідомлення чату.
+		// Welcome chat message.
 		if ( i18n.welcomeMsg ) {
 			appendMessage( 'ai', escapeHtml( i18n.welcomeMsg ) );
 		}

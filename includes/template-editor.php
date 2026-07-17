@@ -1,12 +1,12 @@
 <?php
 /**
- * Власний редактор шаблону для CPT `pdf_ai_template`.
+ * Custom template editor for the `pdf_ai_template` CPT.
  *
- * Замінює стандартний редактор WordPress (який ламає HTML-таблиці й
- * інлайнові стилі) на:
- *  - meta box із сирим HTML (моноширинний textarea);
- *  - живе превю в iframe, що оновлюється під час набору;
- *  - meta box параметрів (тригер, тип дії, розмір) із випадаючими списками.
+ * Replaces the standard WordPress editor (which mangles HTML tables and
+ * inline styles) with:
+ *  - a meta box with the raw HTML (a monospace textarea);
+ *  - a live preview in an iframe that updates as you type;
+ *  - a parameters meta box (trigger, action type, size) with dropdowns.
  *
  * @package AI_PDF_Generator
  */
@@ -25,14 +25,14 @@ class AIPDF_Template_Editor {
 	}
 
 	/**
-	 * Gutenberg для цього CPT вимкнено (шаблон — сирий HTML, не блоки).
+	 * Gutenberg is disabled for this CPT (a template is raw HTML, not blocks).
 	 */
 	public function disable_block_editor( $use, $post_type ) {
 		return AIPDF_Plugin::CPT === $post_type ? false : $use;
 	}
 
 	/**
-	 * Скрипт превю — лише на екрані редагування шаблону.
+	 * The preview script — only on the template editing screen.
 	 */
 	public function enqueue( string $hook ): void {
 		if ( 'post.php' !== $hook && 'post-new.php' !== $hook ) {
@@ -43,7 +43,7 @@ class AIPDF_Template_Editor {
 			return;
 		}
 
-		// WP Color Picker для полів-кольорів.
+		// WP Color Picker for color fields.
 		wp_enqueue_style( 'wp-color-picker' );
 
 		wp_enqueue_script(
@@ -58,7 +58,7 @@ class AIPDF_Template_Editor {
 			'aipdf-editor',
 			'aipdfEditor',
 			array(
-				// Демо-дані для превю (спільні з рендером PDF та Playground).
+				// Sample data for the preview (shared with the PDF renderer and the Playground).
 				'sample' => AIPDF_PDF_Renderer::sample_data(),
 			)
 		);
@@ -67,7 +67,7 @@ class AIPDF_Template_Editor {
 	public function add_meta_boxes(): void {
 		add_meta_box(
 			'aipdf_fields',
-			__( 'Візуальне редагування', 'ai-pdf-generator' ),
+			__( 'Visual Editing', 'ai-pdf-generator' ),
 			array( $this, 'box_fields' ),
 			AIPDF_Plugin::CPT,
 			'normal',
@@ -75,7 +75,7 @@ class AIPDF_Template_Editor {
 		);
 		add_meta_box(
 			'aipdf_preview',
-			__( 'Попередній перегляд', 'ai-pdf-generator' ),
+			__( 'Preview', 'ai-pdf-generator' ),
 			array( $this, 'box_preview' ),
 			AIPDF_Plugin::CPT,
 			'normal',
@@ -83,7 +83,7 @@ class AIPDF_Template_Editor {
 		);
 		add_meta_box(
 			'aipdf_html',
-			__( 'Розширено: HTML-каркас', 'ai-pdf-generator' ),
+			__( 'Advanced: HTML Skeleton', 'ai-pdf-generator' ),
 			array( $this, 'box_html' ),
 			AIPDF_Plugin::CPT,
 			'normal',
@@ -91,7 +91,7 @@ class AIPDF_Template_Editor {
 		);
 		add_meta_box(
 			'aipdf_params',
-			__( 'Параметри генерації', 'ai-pdf-generator' ),
+			__( 'Generation Parameters', 'ai-pdf-generator' ),
 			array( $this, 'box_params' ),
 			AIPDF_Plugin::CPT,
 			'side',
@@ -99,7 +99,7 @@ class AIPDF_Template_Editor {
 		);
 		add_meta_box(
 			'aipdf_conditions',
-			__( 'Умови генерації (Conditional Logic)', 'ai-pdf-generator' ),
+			__( 'Generation Conditions (Conditional Logic)', 'ai-pdf-generator' ),
 			array( $this, 'box_conditions' ),
 			AIPDF_Plugin::CPT,
 			'side',
@@ -108,8 +108,8 @@ class AIPDF_Template_Editor {
 	}
 
 	/**
-	 * Meta box: візуальні поля (кольори/тексти) з editable_fields.
-	 * Сирий HTML тут прихований — редагування лише через поля.
+	 * Meta box: visual fields (colors/text) from editable_fields.
+	 * The raw HTML is hidden here — editing happens only via these fields.
 	 */
 	public function box_fields( WP_Post $post ): void {
 		wp_nonce_field( self::NONCE, self::NONCE );
@@ -119,14 +119,14 @@ class AIPDF_Template_Editor {
 		if ( empty( $fields ) ) {
 			?>
 			<p class="description">
-				<?php esc_html_e( 'Цей шаблон не має візуальних полів (згенерований раніше або без них). Ви можете редагувати HTML-каркас у блоці «Розширено» нижче, або згенерувати новий шаблон у Playground — нові шаблони отримують візуальні поля автоматично.', 'ai-pdf-generator' ); ?>
+				<?php esc_html_e( 'This template has no visual fields (generated earlier, or without any). You can edit the HTML skeleton in the "Advanced" box below, or generate a new template in the Playground — new templates get visual fields automatically.', 'ai-pdf-generator' ); ?>
 			</p>
 			<?php
 			return;
 		}
 		?>
 		<p class="description" style="margin:0 0 12px;">
-			<?php esc_html_e( 'Змінюйте кольори та тексти — превю оновлюється миттєво. HTML-структуру чіпати не потрібно.', 'ai-pdf-generator' ); ?>
+			<?php esc_html_e( 'Edit colors and text — the preview updates instantly. There\'s no need to touch the HTML structure.', 'ai-pdf-generator' ); ?>
 		</p>
 		<table class="form-table" role="presentation">
 			<?php foreach ( $fields as $field ) : ?>
@@ -171,13 +171,13 @@ class AIPDF_Template_Editor {
 	}
 
 	/**
-	 * Meta box: сирий HTML-каркас (розширено). Прихований у згорнутому блоці —
-	 * основне редагування через візуальні поля вище.
+	 * Meta box: raw HTML skeleton (advanced). Collapsed by default —
+	 * the primary way to edit is via the visual fields above.
 	 */
 	public function box_html( WP_Post $post ): void {
 		?>
 		<p class="description" style="margin:0 0 8px;">
-			<?php esc_html_e( 'HTML-каркас документа з плейсхолдерами {{field_key}} (візуальні поля) та даними події ({{client_name}}, {{order_id}}…). Редагуйте лише якщо потрібно змінити структуру.', 'ai-pdf-generator' ); ?>
+			<?php esc_html_e( 'The document\'s HTML skeleton with {{field_key}} placeholders (visual fields) and event data ({{client_name}}, {{order_id}}…). Only edit this if you need to change the structure.', 'ai-pdf-generator' ); ?>
 		</p>
 		<textarea
 			id="aipdf-html-content"
@@ -190,20 +190,20 @@ class AIPDF_Template_Editor {
 	}
 
 	/**
-	 * Meta box: живе превю (iframe у пісочниці).
+	 * Meta box: live preview (a sandboxed iframe).
 	 */
 	public function box_preview( WP_Post $post ): void {
 		?>
 		<p class="description" style="margin:0 0 8px;">
-			<?php esc_html_e( 'Оновлюється автоматично під час редагування. Плейсхолдери замінені демо-даними.', 'ai-pdf-generator' ); ?>
-			<button type="button" class="button button-small" id="aipdf-preview-refresh"><?php esc_html_e( 'Оновити', 'ai-pdf-generator' ); ?></button>
+			<?php esc_html_e( 'Updates automatically as you edit. Placeholders are replaced with sample data.', 'ai-pdf-generator' ); ?>
+			<button type="button" class="button button-small" id="aipdf-preview-refresh"><?php esc_html_e( 'Refresh', 'ai-pdf-generator' ); ?></button>
 		</p>
 		<iframe id="aipdf-editor-preview" sandbox="" style="width:100%;height:520px;border:1px solid #ccd0d4;background:#fff;"></iframe>
 		<?php
 	}
 
 	/**
-	 * Meta box: тригер, тип дії, розмір — редаговані списки.
+	 * Meta box: trigger, action type, size — editable dropdowns.
 	 */
 	public function box_params( WP_Post $post ): void {
 		$trigger = (string) get_post_meta( $post->ID, '_aipdf_trigger_plugin', true );
@@ -211,12 +211,12 @@ class AIPDF_Template_Editor {
 		$paper   = (string) get_post_meta( $post->ID, '_aipdf_paper_size', true );
 		?>
 		<p>
-			<label for="aipdf-trigger"><strong><?php esc_html_e( 'Тригер', 'ai-pdf-generator' ); ?></strong></label><br />
+			<label for="aipdf-trigger"><strong><?php esc_html_e( 'Trigger', 'ai-pdf-generator' ); ?></strong></label><br />
 			<select id="aipdf-trigger" name="aipdf_trigger" style="width:100%;">
 				<?php
-				// Показуємо лише доступні тригери (активні плагіни). Якщо у шаблону
-				// збережений тригер плагіна, який зараз вимкнено, — додаємо його
-				// окремо, щоб значення не загубилось при збереженні.
+				// Show only the available triggers (active plugins). If the
+				// template's saved trigger belongs to a now-inactive plugin,
+				// add it separately so the value isn't lost on save.
 				$options = AIPDF_Triggers::available();
 				if ( '' !== $trigger && ! in_array( $trigger, $options, true ) ) {
 					$options[] = $trigger;
@@ -227,14 +227,14 @@ class AIPDF_Template_Editor {
 					<option value="<?php echo esc_attr( $t ); ?>" <?php selected( $trigger, $t ); ?>>
 						<?php
 						echo esc_html( AIPDF_Triggers::label( $t ) );
-						echo $is_inactive ? ' ' . esc_html__( '(плагін неактивний)', 'ai-pdf-generator' ) : '';
+						echo $is_inactive ? ' ' . esc_html__( '(plugin inactive)', 'ai-pdf-generator' ) : '';
 						?>
 					</option>
 				<?php endforeach; ?>
 			</select>
 		</p>
 		<p>
-			<label for="aipdf-action"><strong><?php esc_html_e( 'Тип дії', 'ai-pdf-generator' ); ?></strong></label><br />
+			<label for="aipdf-action"><strong><?php esc_html_e( 'Action Type', 'ai-pdf-generator' ); ?></strong></label><br />
 			<select id="aipdf-action" name="aipdf_action" style="width:100%;">
 				<?php foreach ( AIPDF_Plugin::ALLOWED_ACTIONS as $a ) : ?>
 					<option value="<?php echo esc_attr( $a ); ?>" <?php selected( $action, $a ); ?>><?php echo esc_html( $a ); ?></option>
@@ -242,22 +242,22 @@ class AIPDF_Template_Editor {
 			</select>
 		</p>
 		<p>
-			<label for="aipdf-paper"><strong><?php esc_html_e( 'Розмір (A4, Letter, 800x400…)', 'ai-pdf-generator' ); ?></strong></label><br />
+			<label for="aipdf-paper"><strong><?php esc_html_e( 'Size (A4, Letter, 800x400…)', 'ai-pdf-generator' ); ?></strong></label><br />
 			<input type="text" id="aipdf-paper" name="aipdf_paper" value="<?php echo esc_attr( $paper ); ?>" style="width:100%;" />
 		</p>
 		<?php
 	}
 
 	/**
-	 * Meta box: умови генерації (Conditional Logic) — repeater «поле /
-	 * оператор / значення». Усі рядки поєднуються через І (AND); без
-	 * жодного рядка тригер спрацьовує завжди, як і раніше.
+	 * Meta box: generation conditions (Conditional Logic) — a "field /
+	 * operator / value" repeater. All rows are combined with AND; with no
+	 * rows the trigger always fires, as before.
 	 */
 	public function box_conditions( WP_Post $post ): void {
 		$conditions = AIPDF_Conditions::get( $post->ID );
 		?>
 		<p class="description" style="margin:0 0 8px;">
-			<?php esc_html_e( 'Генерувати PDF лише якщо ВСІ умови нижче виконані. Поле — це ключ даних тригера (напр. order_total, product_category, client_name). Без жодної умови — спрацьовує завжди.', 'ai-pdf-generator' ); ?>
+			<?php esc_html_e( 'Generate the PDF only if ALL conditions below are met. "Field" is a trigger data key (e.g. order_total, product_category, client_name). With no conditions, it always fires.', 'ai-pdf-generator' ); ?>
 		</p>
 		<div id="aipdf-cond-rows">
 			<?php foreach ( $conditions as $i => $cond ) : ?>
@@ -265,10 +265,10 @@ class AIPDF_Template_Editor {
 			<?php endforeach; ?>
 		</div>
 		<p>
-			<button type="button" class="button button-small" id="aipdf-cond-add"><?php esc_html_e( '+ Додати умову', 'ai-pdf-generator' ); ?></button>
+			<button type="button" class="button button-small" id="aipdf-cond-add"><?php esc_html_e( '+ Add Condition', 'ai-pdf-generator' ); ?></button>
 		</p>
 
-		<!-- Шаблон рядка для JS (клонується при «+ Додати умову»). -->
+		<!-- Row template for JS (cloned on "+ Add Condition"). -->
 		<script type="text/template" id="aipdf-cond-row-template">
 			<?php $this->render_condition_row( '__INDEX__', array( 'field' => '', 'operator' => '=', 'value' => '' ) ); ?>
 		</script>
@@ -276,8 +276,8 @@ class AIPDF_Template_Editor {
 	}
 
 	/**
-	 * Один рядок repeater'а умов. $index може бути числом (реальний рядок)
-	 * або рядком-плейсхолдером «__INDEX__» (шаблон для JS-клонування).
+	 * A single row of the conditions repeater. $index can be a number (a
+	 * real row) or the "__INDEX__" placeholder string (the JS clone template).
 	 *
 	 * @param int|string                                     $index
 	 * @param array{field:string,operator:string,value:string} $cond
@@ -301,16 +301,16 @@ class AIPDF_Template_Editor {
 				type="text"
 				name="aipdf_cond_value[<?php echo esc_attr( $index ); ?>]"
 				value="<?php echo esc_attr( $cond['value'] ); ?>"
-				placeholder="<?php esc_attr_e( 'значення', 'ai-pdf-generator' ); ?>"
+				placeholder="<?php esc_attr_e( 'value', 'ai-pdf-generator' ); ?>"
 				style="width:28%;"
 			/>
-			<button type="button" class="button-link aipdf-cond-remove" title="<?php esc_attr_e( 'Видалити умову', 'ai-pdf-generator' ); ?>" style="color:#b32d2e;">✕</button>
+			<button type="button" class="button-link aipdf-cond-remove" title="<?php esc_attr_e( 'Remove condition', 'ai-pdf-generator' ); ?>" style="color:#b32d2e;">✕</button>
 		</div>
 		<?php
 	}
 
 	/**
-	 * Збереження: пишемо HTML у post_content та оновлюємо meta.
+	 * Save: writes the HTML to post_content and updates the meta.
 	 */
 	public function save( int $post_id, WP_Post $post ): void {
 		if ( ! isset( $_POST[ self::NONCE ] ) || ! wp_verify_nonce( sanitize_key( $_POST[ self::NONCE ] ), self::NONCE ) ) {
@@ -329,7 +329,7 @@ class AIPDF_Template_Editor {
 		if ( isset( $_POST['aipdf_html'] ) ) {
 			$html = AIPDF_PDF_Renderer::sanitize_html( wp_unslash( $_POST['aipdf_html'] ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_html() IS the sanitization.
 
-			// Оновлюємо post_content без рекурсії save_post.
+			// Update post_content without triggering save_post recursively.
 			remove_action( 'save_post_' . AIPDF_Plugin::CPT, array( $this, 'save' ), 10 );
 			wp_update_post(
 				array(
@@ -340,10 +340,10 @@ class AIPDF_Template_Editor {
 			add_action( 'save_post_' . AIPDF_Plugin::CPT, array( $this, 'save' ), 10, 2 );
 		}
 
-		// Візуальні поля: беремо збережені визначення (тип/лейбл), оновлюємо
-		// лише значення з POST — щоб тип не можна було підмінити з форми.
+		// Visual fields: keep the saved definitions (type/label), only
+		// update the values from POST — so the type can't be spoofed via the form.
 		if ( isset( $_POST['aipdf_field'] ) && is_array( $_POST['aipdf_field'] ) ) {
-			$posted = wp_unslash( $_POST['aipdf_field'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- санітизуємо нижче через AIPDF_Fields.
+			$posted = wp_unslash( $_POST['aipdf_field'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized below via AIPDF_Fields.
 			$fields = AIPDF_Fields::get( $post_id );
 			foreach ( $fields as &$field ) {
 				if ( array_key_exists( $field['key'], $posted ) ) {
@@ -354,7 +354,7 @@ class AIPDF_Template_Editor {
 			AIPDF_Fields::save( $post_id, $fields );
 		}
 
-		// Параметри генерації.
+		// Generation parameters.
 		if ( isset( $_POST['aipdf_trigger'] ) ) {
 			$trigger = AIPDF_Triggers::sanitize( wp_unslash( $_POST['aipdf_trigger'] ) );
 			if ( in_array( $trigger, AIPDF_Triggers::all(), true ) ) {
@@ -374,9 +374,9 @@ class AIPDF_Template_Editor {
 			}
 		}
 
-		// Умови генерації (Conditional Logic): три паралельні масиви repeater'а.
+		// Generation conditions (Conditional Logic): three parallel repeater arrays.
 		if ( isset( $_POST['aipdf_cond_field'] ) && is_array( $_POST['aipdf_cond_field'] ) ) {
-			$fields    = wp_unslash( $_POST['aipdf_cond_field'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- санітизуємо нижче через AIPDF_Conditions::normalize.
+			$fields    = wp_unslash( $_POST['aipdf_cond_field'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized below via AIPDF_Conditions::normalize.
 			$operators = isset( $_POST['aipdf_cond_operator'] ) ? wp_unslash( $_POST['aipdf_cond_operator'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$values    = isset( $_POST['aipdf_cond_value'] ) ? wp_unslash( $_POST['aipdf_cond_value'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 

@@ -1,7 +1,7 @@
 /**
- * AI PDF Generator — редактор шаблону.
- * Візуальні поля (кольори/тексти) + живе превю: підставляє значення полів
- * і демо-дані у HTML-каркас та рендерить у iframe.
+ * AI PDF Generator — template editor.
+ * Visual fields (colors/text) + live preview: substitutes field values
+ * and sample data into the HTML skeleton and renders it in an iframe.
  */
 ( function ( $ ) {
 	'use strict';
@@ -16,7 +16,7 @@
 			return;
 		}
 
-		// Значення візуальних полів: key => value (color/text/textarea).
+		// Visual field values: key => value (color/text/textarea).
 		function fieldValues() {
 			var map = {};
 			$( '.aipdf-field' ).each( function () {
@@ -28,7 +28,7 @@
 			return map;
 		}
 
-		// Підстановка {{key}}: спершу значення полів, потім демо-дані.
+		// {{key}} substitution: field values first, then sample data.
 		function fill( html ) {
 			var data = $.extend( {}, sample, fieldValues() );
 			return html.replace( /\{\{\s*([a-z0-9_]+)\s*\}\}/gi, function ( match, key ) {
@@ -47,7 +47,7 @@
 			timer = window.setTimeout( render, 250 );
 		}
 
-		// WP Color Picker для полів-кольорів.
+		// WP Color Picker for color fields.
 		if ( $.fn.wpColorPicker ) {
 			$( '.aipdf-color-field' ).wpColorPicker( {
 				change: scheduleRender,
@@ -55,14 +55,14 @@
 			} );
 		}
 
-		// Живе оновлення при зміні будь-якого поля або каркаса.
+		// Live update whenever any field or the skeleton changes.
 		$( document ).on( 'input', '.aipdf-field', scheduleRender );
 		$skeleton.on( 'input', scheduleRender );
 		$( '#aipdf-preview-refresh' ).on( 'click', render );
 
 		render();
 
-		// ---------- Умови генерації (Conditional Logic): repeater ----------
+		// ---------- Generation conditions (Conditional Logic): repeater ----------
 		var $condRows = $( '#aipdf-cond-rows' ),
 			$template = $( '#aipdf-cond-row-template' );
 
