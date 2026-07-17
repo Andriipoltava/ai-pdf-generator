@@ -238,12 +238,48 @@
 		} );
 
 		// ---------- Live client-side preview: {{key}} substitution, no AJAX ----------
+
+		// Drop <img> tags whose src is a single placeholder with no value
+		// (e.g. no logo uploaded yet) — an empty src otherwise shows a
+		// broken-image icon instead of just not being there.
+		function hideEmptyImages( html, data ) {
+			return html.replace( /<img\b[^>]*\bsrc\s*=\s*"\{\{\s*([a-z0-9_]+)\s*\}\}"[^>]*\/?>/gi, function ( match, key ) {
+				var value = data[ key.toLowerCase() ];
+				return value ? match : '';
+			} );
+		}
+
+		// The browser can't render mPDF's native <barcode> tag — replace it
+		// (preview only, never the saved template) with a QR image so the
+		// user can actually see what will end up in the PDF.
+		function renderQrPreview( html ) {
+			return html.replace( /<barcode\b([^>]*)\/?>/gi, function ( match, attrs ) {
+				var typeMatch = attrs.match( /type\s*=\s*"([^"]*)"/i );
+				if ( ! typeMatch || 'qr' !== typeMatch[1].toLowerCase() ) {
+					return ''; // Only QR is previewable in-browser; other barcode types are dropped here.
+				}
+				var codeMatch = attrs.match( /code\s*=\s*"([^"]*)"/i );
+				var code = codeMatch ? codeMatch[1] : '';
+				if ( ! code ) {
+					return '';
+				}
+				var sizeMatch = attrs.match( /size\s*=\s*"([^"]*)"/i ),
+					multiplier = sizeMatch ? ( parseFloat( sizeMatch[1] ) || 1 ) : 1,
+					px = Math.max( 40, Math.round( 90 * multiplier ) );
+
+				return '<img src="https://api.qrserver.com/v1/create-qr-code/?size=' + px + 'x' + px + '&data=' + encodeURIComponent( code ) +
+					'" width="' + px + '" height="' + px + '" alt="QR code" title="' + code.replace( /"/g, '&quot;' ) + '" style="display:inline-block;" />';
+			} );
+		}
+
 		function fillPlaceholders( html, fieldValues ) {
 			var data = $.extend( {}, sample, fieldValues );
-			return html.replace( /\{\{\s*([a-z0-9_]+)\s*\}\}/gi, function ( match, key ) {
+			html = hideEmptyImages( html, data );
+			html = html.replace( /\{\{\s*([a-z0-9_]+)\s*\}\}/gi, function ( match, key ) {
 				var value = data[ key.toLowerCase() ];
 				return ( 'undefined' === typeof value ) ? '' : value;
 			} );
+			return renderQrPreview( html );
 		}
 
 		function currentFieldValues() {

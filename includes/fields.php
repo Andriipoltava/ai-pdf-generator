@@ -147,6 +147,76 @@ class AIPDF_Fields {
 	}
 
 	/**
+	 * Makes QR/barcode content editable and visible. mPDF's native
+	 * <barcode code="..." type="QR" /> tag can encode a hardcoded, static
+	 * value (a URL, a fixed ID) that the AI typed directly into the HTML —
+	 * with no editable_fields entry, the user has no way to see or change
+	 * what the QR code actually encodes. This scans for <barcode> tags
+	 * whose `code` attribute is a literal value (NOT a {{placeholder}} —
+	 * those are already driven by trigger data and stay untouched), moves
+	 * that value into a text editable_field, and rewrites the attribute to
+	 * {{auto_qr_data_N}}. Mirrors extract_hardcoded_colors() for the same reason.
+	 *
+	 * @param string                                                                $html            Already-sanitized HTML (post color extraction).
+	 * @param array<int, array{key:string,type:string,label:string,value:string}> $existing_fields Fields already declared/extracted — to avoid key collisions.
+	 * @return array{html:string, fields:array<int, array{key:string,type:string,label:string,value:string}>}
+	 */
+	public static function extract_qr_values( string $html, array $existing_fields ): array {
+		$used_keys = array();
+		foreach ( $existing_fields as $field ) {
+			if ( isset( $field['key'] ) ) {
+				$used_keys[ $field['key'] ] = true;
+			}
+		}
+
+		$new_fields = array();
+		$counter    = 0;
+
+		$html = (string) preg_replace_callback(
+			'/<barcode\b([^>]*)>/i',
+			static function ( array $tag_match ) use ( &$new_fields, &$used_keys, &$counter ) {
+				$updated_attrs = preg_replace_callback(
+					'/\bcode(\s*=\s*)"([^"]*)"/i',
+					static function ( array $code_match ) use ( &$new_fields, &$used_keys, &$counter ) {
+						$value = trim( $code_match[2] );
+
+						// Already a dynamic placeholder — driven by trigger
+						// data, leave it as-is (nothing to make editable).
+						if ( '' === $value || preg_match( '/^\{\{\s*[a-z0-9_]+\s*\}\}$/i', $value ) ) {
+							return $code_match[0];
+						}
+
+						do {
+							++$counter;
+							$key = 'auto_qr_data_' . $counter;
+						} while ( isset( $used_keys[ $key ] ) );
+						$used_keys[ $key ] = true;
+
+						$new_fields[] = array(
+							'key'   => $key,
+							'type'  => 'text',
+							'label' => sprintf(
+								/* translators: %d: sequential number of the auto-detected QR code value. */
+								__( 'QR Code Data %d (auto-detected)', 'ai-pdf-generator' ),
+								count( $new_fields ) + 1
+							),
+							'value' => $value,
+						);
+
+						return 'code' . $code_match[1] . '"{{' . $key . '}}"';
+					},
+					$tag_match[1]
+				);
+
+				return '<barcode' . $updated_attrs . '>';
+			},
+			$html
+		);
+
+		return array( 'html' => $html, 'fields' => $new_fields );
+	}
+
+	/**
 	 * key => value map for substituting placeholders.
 	 *
 	 * @param array<int, array{key:string,value:string}> $fields

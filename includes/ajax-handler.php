@@ -533,6 +533,14 @@ class AIPDF_Ajax_Handler {
 		$html      = $extracted['html'];
 		$fields    = array_merge( $fields, $extracted['fields'] );
 
+		// Same safety net for QR/barcode content: a hardcoded value inside
+		// <barcode code="..."> would otherwise be invisible and uneditable
+		// in the UI. Extract it into a text field so the user can see and
+		// change exactly what the QR code encodes.
+		$qr_extracted = AIPDF_Fields::extract_qr_values( $html, $fields );
+		$html         = $qr_extracted['html'];
+		$fields       = array_merge( $fields, $qr_extracted['fields'] );
+
 		// Drop "orphaned" fields not present in the skeleton, so the editor
 		// doesn't show controls that don't affect anything.
 		$fields = array_values(
@@ -625,6 +633,7 @@ HTML RULES (html_template):
    You can use any dynamic placeholder inside the "code" attribute, for example:
    <barcode code="{{ticket_id}}" type="QR" size="1.5" />
    Adjust "size" from 0.5 (small) to 2.0 (large) depending on the document's layout and importance of the code.
+   If the QR code should encode a fixed, static value (a specific URL, a fixed ID) rather than trigger data, put that value in an editable_field (type "text") and reference it in the "code" attribute — same reasoning as colors: never leave a static value hardcoded where the user can't see or change it.
 
 EDITABLE FIELDS (editable_fields) — the KEY feature. The user must be able to visually edit the template WITHOUT touching HTML. So:
 - Extract every STATIC, human-editable piece of content into an editable field: headings/titles, captions, static labels ("Invoice", "Thank you", "Total:"), accent colors, background colors, footer notes, button texts. NOT dynamic data (client_name, order_id, dates) — those stay as data placeholders from the trigger list.

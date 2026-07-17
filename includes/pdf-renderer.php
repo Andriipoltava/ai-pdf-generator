@@ -240,6 +240,19 @@ class AIPDF_PDF_Renderer {
 	 * @param array<string, string> $data
 	 */
 	public static function substitute( string $html, array $data ): string {
+		// Drop <img> tags whose src is a single placeholder (e.g.
+		// {{logo_url}}) that has no value — an empty src otherwise renders
+		// as a broken-image icon in both the browser preview and the PDF.
+		$html = (string) preg_replace_callback(
+			'/<img\b[^>]*\bsrc\s*=\s*"\{\{\s*([a-z0-9_]+)\s*\}\}"[^>]*\/?>/i',
+			static function ( array $m ) use ( $data ): string {
+				$key   = strtolower( $m[1] );
+				$value = $data[ $key ] ?? '';
+				return '' === trim( (string) $value ) ? '' : $m[0];
+			},
+			$html
+		);
+
 		return (string) preg_replace_callback(
 			'/\{\{\s*([a-z0-9_]+)\s*\}\}/i',
 			static function ( array $m ) use ( $data ): string {
