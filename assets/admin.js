@@ -103,6 +103,7 @@
 			$fields    = $( '#aipdf-chat-fields' ),
 			$metaWrap  = $( '#aipdf-chat-meta' ),
 			$metaLine  = $( '#aipdf-meta-line' ),
+			$draftBadge = $( '#aipdf-draft-badge' ),
 			$saveBtn   = $( '#aipdf-save-btn' ),
 			$saved     = $( '#aipdf-saved' ),
 			i18n       = aipdfData.i18n || {},
@@ -118,7 +119,11 @@
 			layout:     null,
 			layoutJson: '',
 			basePrompt: '',
-			busy:       false
+			busy:       false,
+			// True right after a successful save, as long as the layout
+			// hasn't changed since (new chat message or manual field edit
+			// flips this back to false, showing "unsaved" again).
+			savedAndCurrent: false
 		};
 
 		function escapeHtml( str ) {
@@ -307,6 +312,10 @@
 			if ( chat.layout && chat.layout.editable_fields && chat.layout.editable_fields[ idx ] ) {
 				chat.layout.editable_fields[ idx ].value = value;
 				renderPreview();
+				// A manual edit after saving means the saved post no longer
+				// matches the live preview — show "unsaved" again.
+				chat.savedAndCurrent = false;
+				updateMeta();
 			}
 		}
 
@@ -369,6 +378,9 @@
 			$metaLine.text(
 				chat.layout.trigger_plugin + ' · ' + actionLabel( chat.layout.action_type ) + ' · ' + chat.layout.paper_size
 			);
+			// Only show the "unsaved" badge while the live layout doesn't
+			// match what's actually persisted in the DB.
+			$draftBadge.toggle( ! chat.savedAndCurrent );
 			$metaWrap.show();
 		}
 
@@ -386,6 +398,9 @@
 			};
 			// The verbatim JSON from the server — this is exactly what we send back next time.
 			chat.layoutJson = d.current_layout || JSON.stringify( chat.layout );
+			// A fresh or refined layout hasn't been saved yet, even if an
+			// earlier version of this template was.
+			chat.savedAndCurrent = false;
 
 			renderPreview();
 			renderFields();
@@ -509,6 +524,9 @@
 					$( '#aipdf-edit-link' ).attr( 'href', d.edit_link );
 					$( '#aipdf-test-pdf-link' ).attr( 'href', d.test_pdf_url ).toggle( !! d.pdf_available );
 					$saved.show();
+					// The saved post now matches what's on screen — hide the "unsaved" badge.
+					chat.savedAndCurrent = true;
+					updateMeta();
 				} )
 				.fail( function ( xhr ) {
 					var message = i18n.error;
