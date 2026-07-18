@@ -9,6 +9,19 @@ defined( 'ABSPATH' ) || exit;
 
 class AIPDF_Admin_Page {
 
+	/**
+	 * Menu slug for the standalone "PDF Generator" submenu page.
+	 */
+	public const GENERATOR_SLUG = 'aipdf-pdf-generator';
+
+	/**
+	 * Hook suffix of the generator submenu page, captured from
+	 * add_submenu_page()'s return value so enqueue_assets() can target it
+	 * precisely (its hook name isn't a simple, predictable string like the
+	 * top-level page's).
+	 */
+	private string $generator_hook = '';
+
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
@@ -113,14 +126,25 @@ class AIPDF_Admin_Page {
 
 		// An explicit first submenu item with the same slug as the parent
 		// menu. Without it, the "Templates" CPT (show_in_menu =>
-		// ADMIN_SLUG) pushes the settings/Playground page out of the submenu entirely.
+		// ADMIN_SLUG) pushes this page out of the submenu entirely.
 		add_submenu_page(
 			AIPDF_Plugin::ADMIN_SLUG,
 			__( 'AI PDF Generator', 'ai-pdf-generator' ),
-			__( 'Generator & Settings', 'ai-pdf-generator' ),
+			__( 'Dashboard', 'ai-pdf-generator' ),
 			'manage_options',
 			AIPDF_Plugin::ADMIN_SLUG,
 			array( $this, 'render_page' )
+		);
+
+		// PDF Generator gets its own menu item instead of living as a tab —
+		// it's the page people actually work in day to day.
+		$this->generator_hook = (string) add_submenu_page(
+			AIPDF_Plugin::ADMIN_SLUG,
+			__( 'PDF Generator', 'ai-pdf-generator' ),
+			__( 'PDF Generator', 'ai-pdf-generator' ),
+			'manage_options',
+			self::GENERATOR_SLUG,
+			array( $this, 'render_generator_page' )
 		);
 	}
 
@@ -284,7 +308,10 @@ class AIPDF_Admin_Page {
 	 * JS is only enqueued on the plugin's own page.
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
-		if ( 'toplevel_page_' . AIPDF_Plugin::ADMIN_SLUG !== $hook_suffix ) {
+		$is_dashboard = ( 'toplevel_page_' . AIPDF_Plugin::ADMIN_SLUG === $hook_suffix );
+		$is_generator = ( '' !== $this->generator_hook && $this->generator_hook === $hook_suffix );
+
+		if ( ! $is_dashboard && ! $is_generator ) {
 			return;
 		}
 
@@ -339,7 +366,8 @@ class AIPDF_Admin_Page {
 	}
 
 	/**
-	 * Page markup: settings + Playground.
+	 * Page markup: Instructions, Settings, License, Event Log. The
+	 * generator itself lives on its own submenu page (render_generator_page).
 	 */
 	public function render_page(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -349,25 +377,6 @@ class AIPDF_Admin_Page {
 		$api_key         = (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
 		$cloud_token     = (string) get_option( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN, '' );
 		$generation_mode = (string) get_option( AIPDF_Ajax_Handler::OPTION_GENERATION_MODE, 'gemini_direct' );
-
-		// Smart placeholders: only show groups for active plugins.
-		$placeholder_groups = array(
-			__( 'Basic (always)', 'ai-pdf-generator' ) => array( '{{client_name}}', '{{email}}', '{{date}}', '{{qr_code}}' ),
-			__( 'Branding', 'ai-pdf-generator' )        => array( '{{logo_url}}', '{{brand_color}}', '{{company_name}}', '{{company_address}}', '{{company_email}}' ),
-		);
-		if ( class_exists( 'WooCommerce' ) ) {
-			$placeholder_groups[ __( 'WooCommerce', 'ai-pdf-generator' ) ] = array( '{{order_id}}', '{{order_total}}' );
-		}
-		if ( defined( 'AMELIA_VERSION' ) || class_exists( '\AmeliaBooking\Plugin' ) ) {
-			$placeholder_groups[ __( 'Amelia / Bookings', 'ai-pdf-generator' ) ] = array( '{{ticket_id}}', '{{booking_date}}', '{{service_name}}' );
-		}
-
-		// Ready-made prompts for "Quick Start".
-		$quickstart_prompts = array(
-			__( 'WooCommerce A4 Invoice', 'ai-pdf-generator' )     => __( 'Create a standard A4 invoice for WooCommerce. Logo at the top, then a table with: order number {{order_id}}, client {{client_name}}, total {{order_total}}, date {{date}}.', 'ai-pdf-generator' ),
-			__( 'Amelia 800x400 Ticket', 'ai-pdf-generator' )      => __( 'Create a custom 800x400 px ticket for Amelia. Add a calendar icon, booking date {{booking_date}}, service name {{service_name}}, and a large QR code {{qr_code}}.', 'ai-pdf-generator' ),
-			__( 'Form Thank-You Letter (Letter)', 'ai-pdf-generator' ) => __( 'Create a thank-you letter after a form submission, Letter format. Centered text, addressed to {{client_name}}, date {{date}}.', 'ai-pdf-generator' ),
-		);
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'AI PDF Generator', 'ai-pdf-generator' ); ?></h1>
@@ -392,7 +401,6 @@ class AIPDF_Admin_Page {
 
 			<h2 class="nav-tab-wrapper" id="aipdf-tabs">
 				<a href="#instructions" class="nav-tab nav-tab-active" data-tab="instructions"><?php esc_html_e( 'Instructions', 'ai-pdf-generator' ); ?></a>
-				<a href="#playground" class="nav-tab" data-tab="playground"><?php esc_html_e( 'PDF Generator', 'ai-pdf-generator' ); ?></a>
 				<a href="#settings" class="nav-tab" data-tab="settings"><?php esc_html_e( 'Settings', 'ai-pdf-generator' ); ?></a>
 				<a href="#license" class="nav-tab" data-tab="license"><?php esc_html_e( 'License', 'ai-pdf-generator' ); ?></a>
 				<a href="#logs" class="nav-tab" data-tab="logs"><?php esc_html_e( 'Event Log', 'ai-pdf-generator' ); ?></a>
@@ -408,7 +416,7 @@ class AIPDF_Admin_Page {
 					.aipdf-onboard-steps li:last-child { padding-bottom: 0; }
 					.aipdf-onboard-steps li::before { counter-increment: aipdf-step; content: counter(aipdf-step); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: #2271b1; color: #fff; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; }
 					.aipdf-onboard-steps strong { display: block; margin-bottom: 4px; color: #1d2327; }
-					.aipdf-onboard-steps a.aipdf-onboard-link { font-weight: 600; }
+					.aipdf-onboard-steps a { font-weight: 600; }
 					.aipdf-onboard-tips { max-width: 760px; background: #f0f6fc; border-left: 4px solid #72aee6; padding: 12px 16px; }
 					.aipdf-onboard-tips p { margin-top: 0; }
 					.aipdf-onboard-tips ul { margin: 0; padding-left: 20px; }
@@ -442,9 +450,9 @@ class AIPDF_Admin_Page {
 							<strong><?php esc_html_e( 'Step 3: Generation', 'ai-pdf-generator' ); ?></strong>
 							<?php
 							printf(
-								/* translators: 1: link to the PDF Generator tab, 2: example prompt. */
+								/* translators: 1: link to the PDF Generator page, 2: example prompt. */
 								esc_html__( 'Head to %1$s, write your prompt (e.g. "%2$s") and hit Send.', 'ai-pdf-generator' ),
-								'<a href="#playground" class="aipdf-onboard-link">' . esc_html__( 'PDF Generator', 'ai-pdf-generator' ) . '</a>',
+								'<a href="' . esc_url( admin_url( 'admin.php?page=' . self::GENERATOR_SLUG ) ) . '">' . esc_html__( 'PDF Generator', 'ai-pdf-generator' ) . '</a>',
 								esc_html__( 'Create an invoice for development services', 'ai-pdf-generator' )
 							);
 							?>
@@ -457,99 +465,10 @@ class AIPDF_Admin_Page {
 					<ul>
 						<li><?php esc_html_e( 'Name the document type and its purpose (invoice, ticket, certificate, thank-you letter) — the more specific, the better the layout.', 'ai-pdf-generator' ); ?></li>
 						<li><?php esc_html_e( 'Mention the paper size or dimensions if it matters (A4, Letter, or a custom size like 800x400 for a ticket).', 'ai-pdf-generator' ); ?></li>
-						<li><?php esc_html_e( 'List the placeholders you want included, e.g. {{client_name}}, {{order_total}}, {{qr_code}} — click any placeholder chip in the Generator tab to insert it.', 'ai-pdf-generator' ); ?></li>
+						<li><?php esc_html_e( 'List the placeholders you want included, e.g. {{client_name}}, {{order_total}}, {{qr_code}} — click any placeholder chip on the PDF Generator page to insert it.', 'ai-pdf-generator' ); ?></li>
 						<li><?php esc_html_e( 'Describe the visual style briefly (minimalist, colorful, centered, with a logo at the top) rather than leaving it entirely open-ended.', 'ai-pdf-generator' ); ?></li>
 						<li><?php esc_html_e( 'After the first draft, use follow-up messages to refine it ("make the total bigger", "add a footer with the company address") instead of starting over.', 'ai-pdf-generator' ); ?></li>
 					</ul>
-				</div>
-			</div>
-
-			<!-- ============ Tab: Generator (chat) ============ -->
-			<div id="aipdf-tab-playground" class="aipdf-tab" style="display:none;padding-top:16px;">
-
-				<div class="aipdf-chat-layout" style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;">
-
-					<!-- Left column: chat -->
-					<div class="aipdf-chat-col" style="flex:1 1 420px;min-width:340px;max-width:560px;">
-
-						<p>
-							<label for="aipdf-quickstart"><strong><?php esc_html_e( 'Quick Start:', 'ai-pdf-generator' ); ?></strong></label><br />
-							<select id="aipdf-quickstart" style="width:100%;margin-top:4px;">
-								<option value=""><?php esc_html_e( '-- Choose a ready-made example --', 'ai-pdf-generator' ); ?></option>
-								<?php foreach ( $quickstart_prompts as $label => $prompt_text ) : ?>
-									<option value="<?php echo esc_attr( $prompt_text ); ?>"><?php echo esc_html( $label ); ?></option>
-								<?php endforeach; ?>
-							</select>
-						</p>
-
-						<div class="aipdf-placeholders" style="margin:0 0 10px 0;padding:10px 12px;background:#f6f7f7;border:1px solid #ccd0d4;border-radius:4px;">
-							<strong style="display:block;margin-bottom:6px;font-size:12px;"><?php esc_html_e( 'Placeholders — click to insert into the message field:', 'ai-pdf-generator' ); ?></strong>
-							<?php foreach ( $placeholder_groups as $group_label => $tags ) : ?>
-								<p style="margin:3px 0;">
-									<span style="display:inline-block;min-width:110px;color:#646970;font-size:11px;"><?php echo esc_html( $group_label ); ?>:</span>
-									<?php foreach ( $tags as $tag ) : ?>
-										<code
-											class="aipdf-ph"
-											data-ph="<?php echo esc_attr( $tag ); ?>"
-											title="<?php esc_attr_e( 'Click to insert into the message', 'ai-pdf-generator' ); ?>"
-											style="cursor:pointer;margin:2px 3px 2px 0;padding:2px 6px;display:inline-block;border-radius:3px;font-size:11px;"
-										><?php echo esc_html( $tag ); ?></code>
-									<?php endforeach; ?>
-								</p>
-							<?php endforeach; ?>
-						</div>
-
-						<!-- Chat history -->
-						<div id="aipdf-chat-history" style="border:1px solid #ccd0d4;border-radius:4px;background:#fff;height:380px;overflow-y:auto;padding:12px;margin-bottom:8px;"></div>
-
-						<!-- Reference image (attached to the next message) -->
-						<p style="margin:0 0 6px;">
-							<input type="hidden" id="aipdf-ref-id" value="" />
-							<button type="button" class="button button-small" id="aipdf-ref-upload"><?php esc_html_e( '📎 Reference Image', 'ai-pdf-generator' ); ?></button>
-							<button type="button" class="button button-small" id="aipdf-ref-remove" style="display:none;"><?php esc_html_e( 'Remove', 'ai-pdf-generator' ); ?></button>
-							<img id="aipdf-ref-preview" src="" alt="" style="display:none;max-height:32px;vertical-align:middle;margin-left:6px;border:1px solid #ddd;padding:1px;background:#fff;" />
-							<span id="aipdf-ref-hint" class="description" style="display:none;margin-left:6px;font-size:11px;"><?php esc_html_e( 'will be attached to the next message', 'ai-pdf-generator' ); ?></span>
-						</p>
-
-						<!-- Input field + send -->
-						<div style="display:flex;gap:8px;align-items:flex-end;">
-							<textarea id="aipdf-chat-input" rows="2" class="large-text" style="flex:1;" placeholder="<?php esc_attr_e( 'Describe the document, or what to change…', 'ai-pdf-generator' ); ?>"></textarea>
-							<button type="button" class="button button-primary" id="aipdf-chat-send" style="height:auto;">
-								<?php esc_html_e( 'Send', 'ai-pdf-generator' ); ?>
-							</button>
-						</div>
-						<p class="description" style="margin-top:4px;"><?php esc_html_e( 'Enter to send, Shift+Enter for a new line.', 'ai-pdf-generator' ); ?></p>
-					</div>
-
-					<!-- Right column: live preview + dynamic fields -->
-					<div class="aipdf-preview-col" style="flex:1 1 380px;min-width:340px;">
-
-						<div id="aipdf-chat-meta" style="display:none;margin-bottom:8px;font-size:12px;color:#646970;">
-							<span id="aipdf-draft-badge" style="font-weight:600;color:#b26900;background:#fcf3e6;padding:2px 8px;border-radius:3px;"><?php esc_html_e( 'unsaved', 'ai-pdf-generator' ); ?></span>
-							<span id="aipdf-meta-line" style="margin-left:8px;"></span>
-						</div>
-
-						<iframe id="aipdf-preview" style="width:100%;height:360px;border:1px solid #ccd0d4;background:#fff;display:none;" sandbox=""></iframe>
-						<p id="aipdf-preview-placeholder" class="description" style="border:1px dashed #ccd0d4;border-radius:4px;padding:40px 16px;text-align:center;">
-							<?php esc_html_e( 'The preview will appear here after your first message.', 'ai-pdf-generator' ); ?>
-						</p>
-
-						<div id="aipdf-chat-fields" style="margin-top:12px;"></div>
-
-						<p style="margin-top:12px;">
-							<button type="button" class="button button-primary button-hero" id="aipdf-save-btn" style="display:none;">
-								<?php esc_html_e( 'Save Template', 'ai-pdf-generator' ); ?>
-							</button>
-						</p>
-
-						<div id="aipdf-saved" class="notice notice-success" style="display:none;padding:10px 12px;">
-							<p id="aipdf-saved-msg" style="margin:0 0 8px;"></p>
-							<p style="margin:0;">
-								<a href="#" id="aipdf-edit-link" class="button"><?php esc_html_e( 'Open in Editor', 'ai-pdf-generator' ); ?></a>
-								<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank" style="display:none;"><?php esc_html_e( 'Download Test PDF', 'ai-pdf-generator' ); ?></a>
-							</p>
-						</div>
-					</div>
 				</div>
 			</div>
 
@@ -791,6 +710,125 @@ class AIPDF_Admin_Page {
 					<?php wp_nonce_field( 'aipdf_clear_log' ); ?>
 					<?php submit_button( __( 'Clear Log', 'ai-pdf-generator' ), 'delete', 'submit', false ); ?>
 				</form>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Standalone "PDF Generator" page (its own submenu item, not a tab) —
+	 * the chat/Playground that used to live inside render_page().
+	 */
+	public function render_generator_page(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Insufficient permissions.', 'ai-pdf-generator' ) );
+		}
+
+		// Smart placeholders: only show groups for active plugins.
+		$placeholder_groups = array(
+			__( 'Basic (always)', 'ai-pdf-generator' ) => array( '{{client_name}}', '{{email}}', '{{date}}', '{{qr_code}}' ),
+			__( 'Branding', 'ai-pdf-generator' )        => array( '{{logo_url}}', '{{brand_color}}', '{{company_name}}', '{{company_address}}', '{{company_email}}' ),
+		);
+		if ( class_exists( 'WooCommerce' ) ) {
+			$placeholder_groups[ __( 'WooCommerce', 'ai-pdf-generator' ) ] = array( '{{order_id}}', '{{order_total}}' );
+		}
+		if ( defined( 'AMELIA_VERSION' ) || class_exists( '\AmeliaBooking\Plugin' ) ) {
+			$placeholder_groups[ __( 'Amelia / Bookings', 'ai-pdf-generator' ) ] = array( '{{ticket_id}}', '{{booking_date}}', '{{service_name}}' );
+		}
+
+		// Ready-made prompts for "Quick Start".
+		$quickstart_prompts = array(
+			__( 'WooCommerce A4 Invoice', 'ai-pdf-generator' )     => __( 'Create a standard A4 invoice for WooCommerce. Logo at the top, then a table with: order number {{order_id}}, client {{client_name}}, total {{order_total}}, date {{date}}.', 'ai-pdf-generator' ),
+			__( 'Amelia 800x400 Ticket', 'ai-pdf-generator' )      => __( 'Create a custom 800x400 px ticket for Amelia. Add a calendar icon, booking date {{booking_date}}, service name {{service_name}}, and a large QR code {{qr_code}}.', 'ai-pdf-generator' ),
+			__( 'Form Thank-You Letter (Letter)', 'ai-pdf-generator' ) => __( 'Create a thank-you letter after a form submission, Letter format. Centered text, addressed to {{client_name}}, date {{date}}.', 'ai-pdf-generator' ),
+		);
+		?>
+		<div class="wrap">
+			<h1><?php esc_html_e( 'PDF Generator', 'ai-pdf-generator' ); ?></h1>
+
+			<div class="aipdf-chat-layout" style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;margin-top:16px;">
+
+				<!-- Left column: chat -->
+				<div class="aipdf-chat-col" style="flex:1 1 420px;min-width:340px;max-width:560px;">
+
+					<p>
+						<label for="aipdf-quickstart"><strong><?php esc_html_e( 'Quick Start:', 'ai-pdf-generator' ); ?></strong></label><br />
+						<select id="aipdf-quickstart" style="width:100%;margin-top:4px;">
+							<option value=""><?php esc_html_e( '-- Choose a ready-made example --', 'ai-pdf-generator' ); ?></option>
+							<?php foreach ( $quickstart_prompts as $label => $prompt_text ) : ?>
+								<option value="<?php echo esc_attr( $prompt_text ); ?>"><?php echo esc_html( $label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</p>
+
+					<div class="aipdf-placeholders" style="margin:0 0 10px 0;padding:10px 12px;background:#f6f7f7;border:1px solid #ccd0d4;border-radius:4px;">
+						<strong style="display:block;margin-bottom:6px;font-size:12px;"><?php esc_html_e( 'Placeholders — click to insert into the message field:', 'ai-pdf-generator' ); ?></strong>
+						<?php foreach ( $placeholder_groups as $group_label => $tags ) : ?>
+							<p style="margin:3px 0;">
+								<span style="display:inline-block;min-width:110px;color:#646970;font-size:11px;"><?php echo esc_html( $group_label ); ?>:</span>
+								<?php foreach ( $tags as $tag ) : ?>
+									<code
+										class="aipdf-ph"
+										data-ph="<?php echo esc_attr( $tag ); ?>"
+										title="<?php esc_attr_e( 'Click to insert into the message', 'ai-pdf-generator' ); ?>"
+										style="cursor:pointer;margin:2px 3px 2px 0;padding:2px 6px;display:inline-block;border-radius:3px;font-size:11px;"
+									><?php echo esc_html( $tag ); ?></code>
+								<?php endforeach; ?>
+							</p>
+						<?php endforeach; ?>
+					</div>
+
+					<!-- Chat history -->
+					<div id="aipdf-chat-history" style="border:1px solid #ccd0d4;border-radius:4px;background:#fff;height:380px;overflow-y:auto;padding:12px;margin-bottom:8px;"></div>
+
+					<!-- Reference image (attached to the next message) -->
+					<p style="margin:0 0 6px;">
+						<input type="hidden" id="aipdf-ref-id" value="" />
+						<button type="button" class="button button-small" id="aipdf-ref-upload"><?php esc_html_e( '📎 Reference Image', 'ai-pdf-generator' ); ?></button>
+						<button type="button" class="button button-small" id="aipdf-ref-remove" style="display:none;"><?php esc_html_e( 'Remove', 'ai-pdf-generator' ); ?></button>
+						<img id="aipdf-ref-preview" src="" alt="" style="display:none;max-height:32px;vertical-align:middle;margin-left:6px;border:1px solid #ddd;padding:1px;background:#fff;" />
+						<span id="aipdf-ref-hint" class="description" style="display:none;margin-left:6px;font-size:11px;"><?php esc_html_e( 'will be attached to the next message', 'ai-pdf-generator' ); ?></span>
+					</p>
+
+					<!-- Input field + send -->
+					<div style="display:flex;gap:8px;align-items:flex-end;">
+						<textarea id="aipdf-chat-input" rows="2" class="large-text" style="flex:1;" placeholder="<?php esc_attr_e( 'Describe the document, or what to change…', 'ai-pdf-generator' ); ?>"></textarea>
+						<button type="button" class="button button-primary" id="aipdf-chat-send" style="height:auto;">
+							<?php esc_html_e( 'Send', 'ai-pdf-generator' ); ?>
+						</button>
+					</div>
+					<p class="description" style="margin-top:4px;"><?php esc_html_e( 'Enter to send, Shift+Enter for a new line.', 'ai-pdf-generator' ); ?></p>
+				</div>
+
+				<!-- Right column: live preview + dynamic fields -->
+				<div class="aipdf-preview-col" style="flex:1 1 380px;min-width:340px;">
+
+					<div id="aipdf-chat-meta" style="display:none;margin-bottom:8px;font-size:12px;color:#646970;">
+						<span id="aipdf-draft-badge" style="font-weight:600;color:#b26900;background:#fcf3e6;padding:2px 8px;border-radius:3px;"><?php esc_html_e( 'unsaved', 'ai-pdf-generator' ); ?></span>
+						<span id="aipdf-meta-line" style="margin-left:8px;"></span>
+					</div>
+
+					<iframe id="aipdf-preview" style="width:100%;height:360px;border:1px solid #ccd0d4;background:#fff;display:none;" sandbox=""></iframe>
+					<p id="aipdf-preview-placeholder" class="description" style="border:1px dashed #ccd0d4;border-radius:4px;padding:40px 16px;text-align:center;">
+						<?php esc_html_e( 'The preview will appear here after your first message.', 'ai-pdf-generator' ); ?>
+					</p>
+
+					<div id="aipdf-chat-fields" style="margin-top:12px;"></div>
+
+					<p style="margin-top:12px;">
+						<button type="button" class="button button-primary button-hero" id="aipdf-save-btn" style="display:none;">
+							<?php esc_html_e( 'Save Template', 'ai-pdf-generator' ); ?>
+						</button>
+					</p>
+
+					<div id="aipdf-saved" class="notice notice-success" style="display:none;padding:10px 12px;">
+						<p id="aipdf-saved-msg" style="margin:0 0 8px;"></p>
+						<p style="margin:0;">
+							<a href="#" id="aipdf-edit-link" class="button"><?php esc_html_e( 'Open in Editor', 'ai-pdf-generator' ); ?></a>
+							<a href="#" id="aipdf-test-pdf-link" class="button" target="_blank" style="display:none;"><?php esc_html_e( 'Download Test PDF', 'ai-pdf-generator' ); ?></a>
+						</p>
+					</div>
+				</div>
 			</div>
 		</div>
 		<?php
