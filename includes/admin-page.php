@@ -630,7 +630,7 @@ class AIPDF_Admin_Page {
 								</p>
 							</td>
 						</tr>
-						<tr>
+						<tr id="aipdf-row-api-key">
 							<th scope="row">
 								<label for="aipdf-api-key"><?php esc_html_e( 'Gemini API Key', 'ai-pdf-generator' ); ?></label>
 							</th>
@@ -649,7 +649,7 @@ class AIPDF_Admin_Page {
 								</p>
 							</td>
 						</tr>
-						<tr>
+						<tr id="aipdf-row-cloud-token">
 							<th scope="row">
 								<label for="aipdf-cloud-token"><?php esc_html_e( 'Cloud License Key', 'ai-pdf-generator' ); ?></label>
 							</th>

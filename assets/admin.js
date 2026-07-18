@@ -102,6 +102,26 @@
 			} );
 		}() );
 
+		// ---------- Generation Mode: show only the relevant key field ----------
+		( function () {
+			var $modeRadios  = $( '#aipdf-mode-own, #aipdf-mode-cloud' ),
+				$apiKeyRow   = $( '#aipdf-row-api-key' ),
+				$cloudRow    = $( '#aipdf-row-cloud-token' );
+
+			if ( ! $modeRadios.length ) {
+				return;
+			}
+
+			function syncFieldVisibility() {
+				var isCloud = $( '#aipdf-mode-cloud' ).is( ':checked' );
+				$apiKeyRow.toggle( ! isCloud );
+				$cloudRow.toggle( isCloud );
+			}
+
+			$modeRadios.on( 'change', syncFieldVisibility );
+			syncFieldVisibility();
+		}() );
+
 		// ---------- Cloud trial activation (License tab) ----------
 		( function () {
 			var $btn  = $( '#aipdf-get-trial-btn' ),
