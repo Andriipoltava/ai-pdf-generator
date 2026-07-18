@@ -26,6 +26,10 @@
 
 			$( '.aipdf-tab' ).hide();
 			$( '#aipdf-tab-' + name ).show();
+
+			if ( 'license' === name ) {
+				fetchLicenseStatus();
+			}
 		}
 
 		$( '#aipdf-tabs' ).on( 'click', '.nav-tab', function ( e ) {
@@ -89,7 +93,7 @@
 			} );
 		}() );
 
-		// ---------- Cloud trial activation (Settings tab) ----------
+		// ---------- Cloud trial activation (License tab) ----------
 		( function () {
 			var $btn  = $( '#aipdf-get-trial-btn' ),
 				i18n  = aipdfData.i18n || {};
@@ -131,56 +135,69 @@
 			} );
 		}() );
 
-		// ---------- Cloud license status (Settings tab) ----------
-		( function () {
+		// ---------- Cloud license status dashboard (License tab) ----------
+		var licenseStatusRequested = false;
+
+		function fetchLicenseStatus() {
 			var $card = $( '#aipdf-license-status-card' ),
 				i18n  = aipdfData.i18n || {};
 
-			if ( ! $card.length || ! aipdfData.cloudMode || ! aipdfData.hasCloudToken ) {
+			if ( ! $card.length || ! aipdfData.cloudMode || ! aipdfData.hasCloudToken || licenseStatusRequested ) {
 				return;
 			}
+			licenseStatusRequested = true;
 
 			function row( label, value ) {
-				return $( '<p/>' ).css( { margin: '4px 0' } ).append(
-					$( '<strong/>', { text: label + ': ' } ),
-					document.createTextNode( value )
+				return $( '<div/>', { class: 'aipdf-license-row' } ).append(
+					$( '<span/>', { class: 'aipdf-license-label', text: label } ),
+					$( '<span/>', { class: 'aipdf-license-value' } ).append( document.createTextNode( value ) )
 				);
 			}
 
 			function renderStatus( data ) {
-				var plan    = data.plan || data.tariff || data.plan_name || '—',
-					credits = ( 'undefined' !== typeof data.credits_remaining ) ? data.credits_remaining
-							: ( 'undefined' !== typeof data.credits ? data.credits : '—' ),
-					domainsUsed  = ( undefined !== data.domains_used )  ? data.domains_used  : ( undefined !== data.sites_used  ? data.sites_used  : null ),
-					domainsLimit = ( undefined !== data.domains_limit ) ? data.domains_limit : ( undefined !== data.sites_limit ? data.sites_limit : null ),
-					expiresRaw   = data.expires_at || data.expiresAt || '',
-					expires      = expiresRaw;
+				var plan         = data.plan_name || data.plan || data.tariff || '—',
+					billingCycle = data.billing_cycle || '',
+					credits      = ( undefined !== data.credits_balance ) ? data.credits_balance
+								 : ( undefined !== data.credits_remaining ? data.credits_remaining
+								 : ( undefined !== data.credits ? data.credits : '—' ) ),
+					domainsUsed  = ( undefined !== data.domains_used ) ? data.domains_used : ( undefined !== data.sites_used ? data.sites_used : null ),
+					domainsLimit = ( undefined !== data.domain_limit ) ? data.domain_limit : ( undefined !== data.domains_limit ? data.domains_limit : ( undefined !== data.sites_limit ? data.sites_limit : undefined ) ),
+					expiresRaw   = data.expires_at || data.expiresAt || null,
+					expires;
+
+				var planText = String( plan );
+				if ( billingCycle ) {
+					planText += ' (' + billingCycle + ')';
+				}
 
 				if ( expiresRaw ) {
 					var d = new Date( expiresRaw );
-					if ( ! isNaN( d.getTime() ) ) {
-						expires = d.toLocaleDateString();
-					}
+					expires = isNaN( d.getTime() ) ? String( expiresRaw ) : d.toLocaleDateString();
+				} else {
+					expires = i18n.licenseNoExpiration || 'No Expiration';
 				}
 
-				$card.empty().removeClass( 'notice-error' ).addClass( 'notice notice-info' ).css( { padding: '10px 12px', maxWidth: '420px' } );
+				var domainsText;
+				if ( null === domainsLimit || undefined === domainsLimit ) {
+					domainsText = ( null !== domainsUsed && undefined !== domainsUsed )
+						? domainsUsed + ' / ' + ( i18n.licenseUnlimited || 'Unlimited' )
+						: ( i18n.licenseUnlimited || 'Unlimited' );
+				} else {
+					domainsText = ( null !== domainsUsed && undefined !== domainsUsed ? domainsUsed : '—' ) + ' / ' + domainsLimit;
+				}
 
-				$card.append( row( i18n.licensePlan || 'Plan', String( plan ) ) );
+				$card.empty().removeClass( 'notice-error' ).addClass( 'notice notice-info aipdf-license-card' );
+
+				$card.append( row( i18n.licensePlan || 'Plan', planText ) );
 				$card.append( row( i18n.licenseCredits || 'Credits Remaining', String( credits ) ) );
-
-				if ( null !== domainsUsed && null !== domainsLimit ) {
-					$card.append( row( i18n.licenseDomains || 'Domains', domainsUsed + ' / ' + domainsLimit ) );
-				}
-
-				if ( expires ) {
-					$card.append( row( i18n.licenseExpires || 'Valid Until', String( expires ) ) );
-				}
+				$card.append( row( i18n.licenseDomains || 'Domains', domainsText ) );
+				$card.append( row( i18n.licenseExpires || 'Valid Until', expires ) );
 
 				$card.show();
 			}
 
 			function renderError( message ) {
-				$card.empty().removeClass( 'notice-info' ).addClass( 'notice notice-error' ).css( { padding: '10px 12px', maxWidth: '420px' } );
+				$card.empty().removeClass( 'notice-info' ).addClass( 'notice notice-error aipdf-license-card' );
 				$card.append( $( '<p/>', { text: message, css: { margin: 0 } } ) );
 				$card.show();
 			}
@@ -202,8 +219,11 @@
 						message = xhr.responseJSON.data.message;
 					}
 					renderError( message );
+				} )
+				.always( function () {
+					licenseStatusRequested = false;
 				} );
-		}() );
+		}
 
 		// ==================== CHAT (Playground) ====================
 

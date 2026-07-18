@@ -159,6 +159,16 @@ class AIPDF_Admin_Page {
 			)
 		);
 
+		register_setting(
+			'aipdf_settings_group',
+			AIPDF_Ajax_Handler::OPTION_GENERATION_MODE,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( $this, 'sanitize_generation_mode' ),
+				'default'           => 'gemini_direct',
+			)
+		);
+
 		// --- Branding ---
 		register_setting( 'aipdf_settings_group', AIPDF_Brand::OPT_LOGO, array(
 			'type'              => 'string',
@@ -247,6 +257,15 @@ class AIPDF_Admin_Page {
 	}
 
 	/**
+	 * Restricts the generation mode to the two known values; anything else
+	 * (tampered request, missing field) falls back to the direct-key mode.
+	 */
+	public function sanitize_generation_mode( $value ): string {
+		$value = (string) $value;
+		return in_array( $value, array( 'gemini_direct', 'cloud_service' ), true ) ? $value : 'gemini_direct';
+	}
+
+	/**
 	 * Same "don't wipe on empty submit" behavior as the Gemini API key —
 	 * this field is normally set automatically by the trial-activation
 	 * AJAX call, but can also be pasted manually (e.g. a purchased license).
@@ -311,6 +330,8 @@ class AIPDF_Admin_Page {
 					'licenseCredits' => __( 'Credits Remaining', 'ai-pdf-generator' ),
 					'licenseDomains' => __( 'Domains', 'ai-pdf-generator' ),
 					'licenseExpires' => __( 'Valid Until', 'ai-pdf-generator' ),
+					'licenseUnlimited'     => __( 'Unlimited', 'ai-pdf-generator' ),
+					'licenseNoExpiration'  => __( 'No Expiration', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -324,8 +345,9 @@ class AIPDF_Admin_Page {
 			wp_die( esc_html__( 'Insufficient permissions.', 'ai-pdf-generator' ) );
 		}
 
-		$api_key     = (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
-		$cloud_token = (string) get_option( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN, '' );
+		$api_key         = (string) get_option( AIPDF_Plugin::OPTION_API_KEY, '' );
+		$cloud_token     = (string) get_option( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN, '' );
+		$generation_mode = (string) get_option( AIPDF_Ajax_Handler::OPTION_GENERATION_MODE, 'gemini_direct' );
 
 		// Smart placeholders: only show groups for active plugins.
 		$placeholder_groups = array(
@@ -356,6 +378,7 @@ class AIPDF_Admin_Page {
 			<h2 class="nav-tab-wrapper" id="aipdf-tabs">
 				<a href="#playground" class="nav-tab nav-tab-active" data-tab="playground"><?php esc_html_e( 'Generator (Playground)', 'ai-pdf-generator' ); ?></a>
 				<a href="#settings" class="nav-tab" data-tab="settings"><?php esc_html_e( 'Settings', 'ai-pdf-generator' ); ?></a>
+				<a href="#license" class="nav-tab" data-tab="license"><?php esc_html_e( 'License', 'ai-pdf-generator' ); ?></a>
 				<a href="#logs" class="nav-tab" data-tab="logs"><?php esc_html_e( 'Event Log', 'ai-pdf-generator' ); ?></a>
 			</h2>
 
@@ -455,48 +478,6 @@ class AIPDF_Admin_Page {
 					<table class="form-table" role="presentation">
 						<tr>
 							<th scope="row">
-								<label for="aipdf-api-key"><?php esc_html_e( 'Gemini API Key', 'ai-pdf-generator' ); ?></label>
-							</th>
-							<td>
-								<input
-									type="password"
-									id="aipdf-api-key"
-									name="<?php echo esc_attr( AIPDF_Plugin::OPTION_API_KEY ); ?>"
-									value=""
-									class="regular-text"
-									autocomplete="new-password"
-									placeholder="<?php echo $api_key ? esc_attr__( '•••••••• (key saved — enter a new one to replace it)', 'ai-pdf-generator' ) : esc_attr__( 'Enter your Gemini API key', 'ai-pdf-generator' ); ?>"
-								/>
-								<p class="description">
-									<?php esc_html_e( 'The key is stored in the site\'s options and never echoed back into HTML. A safer option: add define( \'AIPDF_GEMINI_API_KEY\', \'…\' ) to wp-config.php — the constant takes priority.', 'ai-pdf-generator' ); ?>
-								</p>
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">
-								<label for="aipdf-cloud-token"><?php esc_html_e( 'Cloud License Key', 'ai-pdf-generator' ); ?></label>
-							</th>
-							<td>
-								<input
-									type="password"
-									id="aipdf-cloud-token"
-									name="<?php echo esc_attr( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN ); ?>"
-									value=""
-									class="regular-text"
-									autocomplete="new-password"
-									placeholder="<?php echo $cloud_token ? esc_attr__( '•••••••• (license active — enter a new key to replace it)', 'ai-pdf-generator' ) : esc_attr__( 'No license key yet', 'ai-pdf-generator' ); ?>"
-								/>
-								<?php if ( '' === $cloud_token ) : ?>
-									<button type="button" class="button" id="aipdf-get-trial-btn"><?php esc_html_e( 'Get Free Trial (3 Generations)', 'ai-pdf-generator' ); ?></button>
-								<?php endif; ?>
-								<p class="description">
-									<?php esc_html_e( 'Powers cloud-based generation. Click "Get Free Trial" for 3 free generations tied to your admin email and this domain, or paste a purchased license key here.', 'ai-pdf-generator' ); ?>
-								</p>
-								<div id="aipdf-license-status-card" style="display: none;"></div>
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">
 								<label for="aipdf-model"><?php esc_html_e( 'Gemini Model', 'ai-pdf-generator' ); ?></label>
 							</th>
 							<td>
@@ -574,6 +555,84 @@ class AIPDF_Admin_Page {
 						</tr>
 					</table>
 					<?php submit_button( __( 'Save Settings', 'ai-pdf-generator' ) ); ?>
+				</form>
+			</div>
+
+			<!-- ============ Tab: License / Account ============ -->
+			<div id="aipdf-tab-license" class="aipdf-tab" style="display:none;padding-top:16px;">
+				<style>
+					.aipdf-license-card { max-width: 460px; padding: 16px 20px; border-radius: 6px; }
+					.aipdf-license-row { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 0; border-bottom: 1px solid rgba(0,0,0,.06); }
+					.aipdf-license-row:last-child { border-bottom: none; }
+					.aipdf-license-label { color: #646970; font-size: 13px; }
+					.aipdf-license-value { font-size: 15px; font-weight: 600; color: #1d2327; }
+					.aipdf-license-value small { font-weight: 400; color: #646970; }
+				</style>
+
+				<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
+					<?php settings_fields( 'aipdf_settings_group' ); ?>
+					<input type="hidden" name="_wp_http_referer" value="<?php echo esc_attr( admin_url( 'admin.php?page=' . AIPDF_Plugin::ADMIN_SLUG ) . '#license' ); ?>" />
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row"><?php esc_html_e( 'Generation Mode', 'ai-pdf-generator' ); ?></th>
+							<td>
+								<label style="margin-right:20px;">
+									<input type="radio" name="<?php echo esc_attr( AIPDF_Ajax_Handler::OPTION_GENERATION_MODE ); ?>" value="gemini_direct" <?php checked( $generation_mode, 'gemini_direct' ); ?> />
+									<?php esc_html_e( 'Own Gemini API Key', 'ai-pdf-generator' ); ?>
+								</label>
+								<label>
+									<input type="radio" name="<?php echo esc_attr( AIPDF_Ajax_Handler::OPTION_GENERATION_MODE ); ?>" value="cloud_service" <?php checked( $generation_mode, 'cloud_service' ); ?> />
+									<?php esc_html_e( 'Cloud Service', 'ai-pdf-generator' ); ?>
+								</label>
+								<p class="description">
+									<?php esc_html_e( 'Own key: generation runs directly against your own Gemini API key, free of charge. Cloud Service: generation runs through our managed backend and is billed against your license credits.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="aipdf-api-key"><?php esc_html_e( 'Gemini API Key', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<input
+									type="password"
+									id="aipdf-api-key"
+									name="<?php echo esc_attr( AIPDF_Plugin::OPTION_API_KEY ); ?>"
+									value=""
+									class="regular-text"
+									autocomplete="new-password"
+									placeholder="<?php echo $api_key ? esc_attr__( '•••••••• (key saved — enter a new one to replace it)', 'ai-pdf-generator' ) : esc_attr__( 'Enter your Gemini API key', 'ai-pdf-generator' ); ?>"
+								/>
+								<p class="description">
+									<?php esc_html_e( 'The key is stored in the site\'s options and never echoed back into HTML. A safer option: add define( \'AIPDF_GEMINI_API_KEY\', \'…\' ) to wp-config.php — the constant takes priority.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="aipdf-cloud-token"><?php esc_html_e( 'Cloud License Key', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<input
+									type="password"
+									id="aipdf-cloud-token"
+									name="<?php echo esc_attr( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN ); ?>"
+									value=""
+									class="regular-text"
+									autocomplete="new-password"
+									placeholder="<?php echo $cloud_token ? esc_attr__( '•••••••• (license active — enter a new key to replace it)', 'ai-pdf-generator' ) : esc_attr__( 'No license key yet', 'ai-pdf-generator' ); ?>"
+								/>
+								<?php if ( '' === $cloud_token ) : ?>
+									<button type="button" class="button" id="aipdf-get-trial-btn"><?php esc_html_e( 'Get Free Trial (3 Generations)', 'ai-pdf-generator' ); ?></button>
+								<?php endif; ?>
+								<p class="description">
+									<?php esc_html_e( 'Powers cloud-based generation. Click "Get Free Trial" for 3 free generations tied to your admin email and this domain, or paste a purchased license key here.', 'ai-pdf-generator' ); ?>
+								</p>
+								<div id="aipdf-license-status-card" style="display: none;"></div>
+							</td>
+						</tr>
+					</table>
+					<?php submit_button( __( 'Save License Settings', 'ai-pdf-generator' ) ); ?>
 				</form>
 			</div>
 
