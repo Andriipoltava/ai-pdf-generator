@@ -149,7 +149,12 @@ class AIPDF_Ajax_Handler {
 
 		AIPDF_Logger::get_instance()->info( sprintf( 'Trial license activated for %s (%s).', $email, $domain ) );
 
-		wp_send_json_success( array( 'message' => __( 'Trial activated!', 'ai-pdf-generator' ) ) );
+		wp_send_json_success(
+			array(
+				'message' => __( 'Trial activated!', 'ai-pdf-generator' ),
+				'token'   => $token,
+			)
+		);
 	}
 
 	/**

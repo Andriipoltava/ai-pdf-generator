@@ -42,6 +42,15 @@
 			}
 		} );
 
+		// Promo banner's "View Pricing" link — same tab-switch, from outside #aipdf-tabs.
+		$( document ).on( 'click', '#aipdf-promo-banner .aipdf-promo-link', function ( e ) {
+			e.preventDefault();
+			activateTab( 'license' );
+			if ( window.history.replaceState ) {
+				window.history.replaceState( null, '', '#license' );
+			}
+		} );
+
 		// Initial tab: hash -> after saving settings -> after clearing the log.
 		( function () {
 			var initial = ( window.location.hash || '' ).replace( '#', '' ),
@@ -115,10 +124,23 @@
 				} )
 					.done( function ( response ) {
 						if ( response && response.success ) {
-							window.alert( ( response.data && response.data.message ) || i18n.trialActivated || 'Trial activated!' );
-							// Reload so the server-rendered page reflects the
-							// newly saved license key (and hides this button).
-							window.location.reload();
+							var token = response.data && response.data.token;
+
+							if ( token ) {
+								$( '#aipdf-cloud-token' ).val( token );
+							}
+
+							// Switch to Cloud Service without a full page reload —
+							// the backend already flipped the option server-side,
+							// this just brings the UI in sync immediately.
+							$( '#aipdf-mode-cloud' ).prop( 'checked', true ).trigger( 'change' );
+
+							aipdfData.cloudMode     = true;
+							aipdfData.hasCloudToken = true;
+
+							$btn.fadeOut();
+
+							fetchLicenseStatus();
 							return;
 						}
 						window.alert( ( response && response.data && response.data.message ) || i18n.error || 'Something went wrong.' );
