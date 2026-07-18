@@ -169,10 +169,10 @@
 			}
 			licenseStatusRequested = true;
 
-			function row( label, value ) {
-				return $( '<div/>', { class: 'aipdf-license-row' } ).append(
-					$( '<span/>', { class: 'aipdf-license-label', text: label } ),
-					$( '<span/>', { class: 'aipdf-license-value' } ).append( document.createTextNode( value ) )
+			function tile( label, value ) {
+				return $( '<div/>', { class: 'aipdf-dash-tile' } ).append(
+					$( '<div/>', { class: 'aipdf-dash-tile-label', text: label } ),
+					$( '<div/>', { class: 'aipdf-dash-tile-value' } ).append( document.createTextNode( value ) )
 				);
 			}
 
@@ -208,20 +208,42 @@
 					domainsText = ( null !== domainsUsed && undefined !== domainsUsed ? domainsUsed : '—' ) + ' / ' + domainsLimit;
 				}
 
-				$card.empty().removeClass( 'notice-error' ).addClass( 'notice notice-info aipdf-license-card' );
+				$card
+					.empty()
+					.removeClass( 'notice notice-info notice-error aipdf-license-card' )
+					.addClass( 'aipdf-dash' );
 
-				$card.append( row( i18n.licensePlan || 'Plan', planText ) );
-				$card.append( row( i18n.licenseCredits || 'Credits Remaining', String( credits ) ) );
-				$card.append( row( i18n.licenseDomains || 'Domains', domainsText ) );
-				$card.append( row( i18n.licenseExpires || 'Valid Until', expires ) );
+				var $header = $( '<div/>', { class: 'aipdf-dash-header' } ).append(
+					$( '<span/>', { class: 'aipdf-dash-dot' } ),
+					$( '<span/>', { class: 'aipdf-dash-title' } ).text(
+						( i18n.licenseActivePlan || 'Active Plan:' ) + ' ' + planText
+					)
+				);
 
-				$card.show();
+				var $grid = $( '<div/>', { class: 'aipdf-dash-grid' } ).append(
+					tile( i18n.licenseCredits || 'Credits Remaining', String( credits ) ),
+					tile( i18n.licenseDomains || 'Domains', domainsText ),
+					tile( i18n.licenseExpires || 'Valid Until', expires )
+				);
+
+				$card.append( $header, $grid ).show();
+
+				// A valid, active license — collapse the technical fields and
+				// leave just the dashboard visible.
+				$( '#aipdf-license-settings-wrap' ).removeAttr( 'open' );
 			}
 
 			function renderError( message ) {
-				$card.empty().removeClass( 'notice-info' ).addClass( 'notice notice-error aipdf-license-card' );
+				$card
+					.empty()
+					.removeClass( 'aipdf-dash' )
+					.addClass( 'notice notice-error aipdf-license-card' );
 				$card.append( $( '<p/>', { text: message, css: { margin: 0 } } ) );
 				$card.show();
+
+				// No usable license status — keep the key fields and pricing
+				// table visible so the user can act.
+				$( '#aipdf-license-settings-wrap' ).attr( 'open', '' );
 			}
 
 			$.post( aipdfData.ajaxUrl, {

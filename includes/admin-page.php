@@ -332,6 +332,7 @@ class AIPDF_Admin_Page {
 					'licenseExpires' => __( 'Valid Until', 'ai-pdf-generator' ),
 					'licenseUnlimited'     => __( 'Unlimited', 'ai-pdf-generator' ),
 					'licenseNoExpiration'  => __( 'No Expiration', 'ai-pdf-generator' ),
+					'licenseActivePlan'    => __( 'Active Plan:', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -592,9 +593,24 @@ class AIPDF_Admin_Page {
 					.aipdf-pricing-features { list-style: none; margin: 0; padding: 0; font-size: 13px; color: #3c434a; }
 					.aipdf-pricing-features li { padding: 4px 0 4px 20px; position: relative; }
 					.aipdf-pricing-features li::before { content: "✓"; position: absolute; left: 0; color: #2271b1; font-weight: 700; }
+
+					#aipdf-license-status-card.aipdf-dash { max-width: 640px; background: #fff; border-radius: 8px; border: 1px solid #eef0f2; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); padding: 24px; margin: 0 0 8px; }
+					.aipdf-dash-header { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+					.aipdf-dash-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.15); flex: 0 0 auto; }
+					.aipdf-dash-title { font-size: 18px; font-weight: 700; color: #111827; }
+					.aipdf-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+					.aipdf-dash-tile { background: #f9fafb; border-radius: 8px; padding: 14px 16px; }
+					.aipdf-dash-tile-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; margin-bottom: 6px; }
+					.aipdf-dash-tile-value { font-size: 26px; font-weight: 800; color: #111827; line-height: 1.1; }
+					.aipdf-dash-tile-value small { font-size: 13px; font-weight: 500; color: #6b7280; }
 				</style>
 
-				<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
+				<div id="aipdf-license-status-card" style="display: none;"></div>
+
+				<details id="aipdf-license-settings-wrap" style="margin-top: 20px; background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);"<?php echo ( '' === $cloud_token ) ? ' open' : ''; ?>>
+				<summary style="font-weight: 600; cursor: pointer; outline: none;">⚙️ <?php esc_html_e( 'Manage Keys & Connection', 'ai-pdf-generator' ); ?></summary>
+
+				<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>" style="margin-top:16px;">
 					<?php settings_fields( 'aipdf_settings_group' ); ?>
 					<input type="hidden" name="_wp_http_referer" value="<?php echo esc_attr( admin_url( 'admin.php?page=' . AIPDF_Plugin::ADMIN_SLUG ) . '#license' ); ?>" />
 					<table class="form-table" role="presentation">
@@ -653,7 +669,6 @@ class AIPDF_Admin_Page {
 								<p class="description">
 									<?php esc_html_e( 'Powers cloud-based generation. Click "Get Free Trial" for 3 free generations tied to your admin email and this domain, or paste a purchased license key here.', 'ai-pdf-generator' ); ?>
 								</p>
-								<div id="aipdf-license-status-card" style="display: none;"></div>
 							</td>
 						</tr>
 					</table>
@@ -692,6 +707,7 @@ class AIPDF_Admin_Page {
 						</div>
 					</div>
 				<?php endif; ?>
+				</details>
 			</div>
 
 			<!-- ============ Tab 3: Event Log ============ -->
