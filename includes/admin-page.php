@@ -391,14 +391,81 @@ class AIPDF_Admin_Page {
 			<?php endif; ?>
 
 			<h2 class="nav-tab-wrapper" id="aipdf-tabs">
-				<a href="#playground" class="nav-tab nav-tab-active" data-tab="playground"><?php esc_html_e( 'Generator (Playground)', 'ai-pdf-generator' ); ?></a>
+				<a href="#instructions" class="nav-tab nav-tab-active" data-tab="instructions"><?php esc_html_e( 'Instructions', 'ai-pdf-generator' ); ?></a>
+				<a href="#playground" class="nav-tab" data-tab="playground"><?php esc_html_e( 'PDF Generator', 'ai-pdf-generator' ); ?></a>
 				<a href="#settings" class="nav-tab" data-tab="settings"><?php esc_html_e( 'Settings', 'ai-pdf-generator' ); ?></a>
 				<a href="#license" class="nav-tab" data-tab="license"><?php esc_html_e( 'License', 'ai-pdf-generator' ); ?></a>
 				<a href="#logs" class="nav-tab" data-tab="logs"><?php esc_html_e( 'Event Log', 'ai-pdf-generator' ); ?></a>
 			</h2>
 
-			<!-- ============ Tab 1: Generator (chat) ============ -->
-			<div id="aipdf-tab-playground" class="aipdf-tab" style="padding-top:16px;">
+			<!-- ============ Tab: Instructions (onboarding) ============ -->
+			<div id="aipdf-tab-instructions" class="aipdf-tab" style="padding-top:16px;">
+				<style>
+					.aipdf-onboard-card { max-width: 760px; background: #fff; border: 1px solid #ccd0d4; border-radius: 8px; padding: 24px 28px; margin-bottom: 20px; }
+					.aipdf-onboard-title { font-size: 20px; font-weight: 700; margin: 0 0 18px; color: #1d2327; }
+					.aipdf-onboard-steps { list-style: none; margin: 0; padding: 0; counter-reset: aipdf-step; }
+					.aipdf-onboard-steps li { position: relative; padding: 0 0 18px 42px; }
+					.aipdf-onboard-steps li:last-child { padding-bottom: 0; }
+					.aipdf-onboard-steps li::before { counter-increment: aipdf-step; content: counter(aipdf-step); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: #2271b1; color: #fff; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+					.aipdf-onboard-steps strong { display: block; margin-bottom: 4px; color: #1d2327; }
+					.aipdf-onboard-steps a.aipdf-onboard-link { font-weight: 600; }
+					.aipdf-onboard-tips { max-width: 760px; background: #f0f6fc; border-left: 4px solid #72aee6; padding: 12px 16px; }
+					.aipdf-onboard-tips p { margin-top: 0; }
+					.aipdf-onboard-tips ul { margin: 0; padding-left: 20px; }
+					.aipdf-onboard-tips li { margin-bottom: 6px; }
+				</style>
+
+				<div class="aipdf-onboard-card">
+					<p class="aipdf-onboard-title"><?php esc_html_e( 'Welcome to AI PDF Generator! 👋', 'ai-pdf-generator' ); ?></p>
+					<ol class="aipdf-onboard-steps">
+						<li>
+							<strong><?php esc_html_e( 'Step 1: Activation', 'ai-pdf-generator' ); ?></strong>
+							<?php
+							printf(
+								/* translators: %s: link to the License tab. */
+								esc_html__( 'Go to the %s tab to get a free trial key or enter your own Gemini API key.', 'ai-pdf-generator' ),
+								'<a href="#license" class="aipdf-onboard-link">' . esc_html__( 'License', 'ai-pdf-generator' ) . '</a>'
+							);
+							?>
+						</li>
+						<li>
+							<strong><?php esc_html_e( 'Step 2: Configuration', 'ai-pdf-generator' ); ?></strong>
+							<?php
+							printf(
+								/* translators: %s: link to the Settings tab. */
+								esc_html__( 'On the %s tab, choose an AI model and how long generated files are kept.', 'ai-pdf-generator' ),
+								'<a href="#settings" class="aipdf-onboard-link">' . esc_html__( 'Settings', 'ai-pdf-generator' ) . '</a>'
+							);
+							?>
+						</li>
+						<li>
+							<strong><?php esc_html_e( 'Step 3: Generation', 'ai-pdf-generator' ); ?></strong>
+							<?php
+							printf(
+								/* translators: 1: link to the PDF Generator tab, 2: example prompt. */
+								esc_html__( 'Head to %1$s, write your prompt (e.g. "%2$s") and hit Send.', 'ai-pdf-generator' ),
+								'<a href="#playground" class="aipdf-onboard-link">' . esc_html__( 'PDF Generator', 'ai-pdf-generator' ) . '</a>',
+								esc_html__( 'Create an invoice for development services', 'ai-pdf-generator' )
+							);
+							?>
+						</li>
+					</ol>
+				</div>
+
+				<div class="aipdf-onboard-tips">
+					<p><strong><?php esc_html_e( 'Tips for better results:', 'ai-pdf-generator' ); ?></strong></p>
+					<ul>
+						<li><?php esc_html_e( 'Name the document type and its purpose (invoice, ticket, certificate, thank-you letter) — the more specific, the better the layout.', 'ai-pdf-generator' ); ?></li>
+						<li><?php esc_html_e( 'Mention the paper size or dimensions if it matters (A4, Letter, or a custom size like 800x400 for a ticket).', 'ai-pdf-generator' ); ?></li>
+						<li><?php esc_html_e( 'List the placeholders you want included, e.g. {{client_name}}, {{order_total}}, {{qr_code}} — click any placeholder chip in the Generator tab to insert it.', 'ai-pdf-generator' ); ?></li>
+						<li><?php esc_html_e( 'Describe the visual style briefly (minimalist, colorful, centered, with a logo at the top) rather than leaving it entirely open-ended.', 'ai-pdf-generator' ); ?></li>
+						<li><?php esc_html_e( 'After the first draft, use follow-up messages to refine it ("make the total bigger", "add a footer with the company address") instead of starting over.', 'ai-pdf-generator' ); ?></li>
+					</ul>
+				</div>
+			</div>
+
+			<!-- ============ Tab: Generator (chat) ============ -->
+			<div id="aipdf-tab-playground" class="aipdf-tab" style="display:none;padding-top:16px;">
 
 				<div class="aipdf-chat-layout" style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;">
 
@@ -486,7 +553,7 @@ class AIPDF_Admin_Page {
 				</div>
 			</div>
 
-			<!-- ============ Tab 2: Settings ============ -->
+			<!-- ============ Tab: Settings ============ -->
 			<div id="aipdf-tab-settings" class="aipdf-tab" style="display:none;padding-top:16px;">
 				<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
 					<?php settings_fields( 'aipdf_settings_group' ); ?>
@@ -710,7 +777,7 @@ class AIPDF_Admin_Page {
 				</details>
 			</div>
 
-			<!-- ============ Tab 3: Event Log ============ -->
+			<!-- ============ Tab: Event Log ============ -->
 			<div id="aipdf-tab-logs" class="aipdf-tab" style="display:none;padding-top:16px;">
 				<?php $log_lines = AIPDF_Logger::get_instance()->tail( 50 ); ?>
 				<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;max-height:400px;overflow:auto;font-size:12px;line-height:1.6;border-radius:4px;"><?php

@@ -16,7 +16,7 @@
 		// ---------- Tabs (nav-tab) ----------
 		function activateTab( name ) {
 			if ( ! $( '#aipdf-tab-' + name ).length ) {
-				name = 'playground';
+				name = 'instructions';
 			}
 
 			$( '#aipdf-tabs .nav-tab' )
@@ -42,16 +42,20 @@
 			}
 		} );
 
-		// Promo banner's "View Pricing" link — same tab-switch, from outside #aipdf-tabs.
-		$( document ).on( 'click', '#aipdf-promo-banner .aipdf-promo-link', function ( e ) {
+		// Promo banner + onboarding step links — same tab-switch, from outside #aipdf-tabs.
+		$( document ).on( 'click', '#aipdf-promo-banner .aipdf-promo-link, .aipdf-onboard-link', function ( e ) {
 			e.preventDefault();
-			activateTab( 'license' );
+			var name = ( $( this ).attr( 'href' ) || '' ).replace( '#', '' );
+			if ( ! name ) {
+				return;
+			}
+			activateTab( name );
 			if ( window.history.replaceState ) {
-				window.history.replaceState( null, '', '#license' );
+				window.history.replaceState( null, '', '#' + name );
 			}
 		} );
 
-		// Initial tab: hash -> after saving settings -> after clearing the log.
+		// Initial tab: hash -> after saving settings -> after clearing the log -> first-run Instructions.
 		( function () {
 			var initial = ( window.location.hash || '' ).replace( '#', '' ),
 				search  = window.location.search;
@@ -63,7 +67,7 @@
 				initial = 'logs';
 			}
 
-			activateTab( initial || 'playground' );
+			activateTab( initial || 'instructions' );
 		}() );
 
 		// ---------- Branding: choosing a logo via the media library ----------
