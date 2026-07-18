@@ -116,7 +116,7 @@ class AIPDF_Ajax_Handler {
 		$code = wp_remote_retrieve_response_code( $response );
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
 
-		if ( 200 !== $code ) {
+		if ( 200 !== $code && 201 !== $code ) {
 			// Laravel-style error payloads: a top-level "message", or a
 			// validation "errors" map — fall back to a generic message if
 			// neither is present.
