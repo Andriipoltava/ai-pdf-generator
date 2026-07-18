@@ -38,11 +38,17 @@ class AIPDF_Ajax_Handler {
 	 */
 	private const TRIAL_ENDPOINT = 'http://chnplugi79173.avalon.chost.com.ua/api/v1/license/trial';
 
+	/**
+	 * License status endpoint on our licensing backend.
+	 */
+	private const STATUS_ENDPOINT = 'http://chnplugi79173.avalon.chost.com.ua/api/v1/license/status';
+
 	public function __construct() {
 		// Logged-in admins only — wp_ajax_nopriv is deliberately not registered.
 		add_action( 'wp_ajax_aipdf_chat', array( $this, 'handle_chat' ) );
 		add_action( 'wp_ajax_aipdf_save', array( $this, 'handle_save' ) );
 		add_action( 'wp_ajax_aipdf_get_trial', array( $this, 'handle_get_trial' ) );
+		add_action( 'wp_ajax_aipdf_check_license_status', array( $this, 'handle_check_license_status' ) );
 	}
 
 	/**
@@ -144,6 +150,67 @@ class AIPDF_Ajax_Handler {
 		AIPDF_Logger::get_instance()->info( sprintf( 'Trial license activated for %s (%s).', $email, $domain ) );
 
 		wp_send_json_success( array( 'message' => __( 'Trial activated!', 'ai-pdf-generator' ) ) );
+	}
+
+	/**
+	 * Fetches the current cloud license status (plan, remaining credits,
+	 * domain usage, expiry) from our licensing backend, for display in
+	 * Settings. The response body is passed through to the client as-is —
+	 * the exact field set is defined by the backend's pricing model, so
+	 * the JS renderer reads it defensively rather than this handler
+	 * enforcing a fixed shape.
+	 */
+	public function handle_check_license_status(): void {
+		check_ajax_referer( 'aipdf_generate', 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'ai-pdf-generator' ) ), 403 );
+		}
+
+		$token = (string) get_option( self::OPTION_CLOUD_TOKEN, '' );
+		if ( '' === $token ) {
+			wp_send_json_error( array( 'message' => __( 'No license key saved yet.', 'ai-pdf-generator' ) ), 400 );
+		}
+
+		// Origin: scheme + host of this site, no path — e.g. https://example.com.
+		$parsed_home = wp_parse_url( home_url() );
+		$origin      = ( $parsed_home['scheme'] ?? 'https' ) . '://' . ( $parsed_home['host'] ?? '' );
+
+		$response = wp_remote_get(
+			self::STATUS_ENDPOINT,
+			array(
+				'timeout' => 15,
+				'headers' => array(
+					'Accept'        => 'application/json',
+					'Authorization' => 'Bearer ' . $token,
+					'Origin'        => $origin,
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			AIPDF_Logger::get_instance()->error( 'License status request failed: ' . $response->get_error_message() );
+			wp_send_json_error( array( 'message' => __( 'Could not reach the licensing server. Please try again later.', 'ai-pdf-generator' ) ), 502 );
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( 200 !== $code ) {
+			$message = ( is_array( $data ) && ! empty( $data['message'] ) && is_string( $data['message'] ) )
+				? sanitize_text_field( $data['message'] )
+				: __( 'Could not verify the license status.', 'ai-pdf-generator' );
+
+			AIPDF_Logger::get_instance()->warning( sprintf( 'License status check failed (%d): %s', $code, $message ) );
+			wp_send_json_error( array( 'message' => $message ), $code );
+		}
+
+		if ( ! is_array( $data ) ) {
+			AIPDF_Logger::get_instance()->error( 'License status response was not valid JSON.' );
+			wp_send_json_error( array( 'message' => __( 'The licensing server returned an unexpected response.', 'ai-pdf-generator' ) ), 502 );
+		}
+
+		wp_send_json_success( $data );
 	}
 
 	/**

@@ -285,11 +285,13 @@ class AIPDF_Admin_Page {
 			'aipdf-admin',
 			'aipdfData',
 			array(
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-				'nonce'   => wp_create_nonce( 'aipdf_generate' ),
+				'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+				'nonce'         => wp_create_nonce( 'aipdf_generate' ),
 				// Sample data for the client-side live chat preview (the
 				// same set used by the PDF renderer and the template editor).
-				'sample'  => AIPDF_PDF_Renderer::sample_data(),
+				'sample'        => AIPDF_PDF_Renderer::sample_data(),
+				'cloudMode'     => ( 'cloud_service' === get_option( AIPDF_Ajax_Handler::OPTION_GENERATION_MODE, '' ) ),
+				'hasCloudToken' => ( '' !== (string) get_option( AIPDF_Ajax_Handler::OPTION_CLOUD_TOKEN, '' ) ),
 				'i18n'    => array(
 					'sending'      => __( 'Sending…', 'ai-pdf-generator' ),
 					'send'         => __( 'Send', 'ai-pdf-generator' ),
@@ -305,6 +307,10 @@ class AIPDF_Admin_Page {
 					'trialButton'    => __( 'Get Free Trial (3 Generations)', 'ai-pdf-generator' ),
 					'trialRequesting' => __( 'Requesting…', 'ai-pdf-generator' ),
 					'trialActivated' => __( 'Trial activated!', 'ai-pdf-generator' ),
+					'licensePlan'    => __( 'Plan', 'ai-pdf-generator' ),
+					'licenseCredits' => __( 'Credits Remaining', 'ai-pdf-generator' ),
+					'licenseDomains' => __( 'Domains', 'ai-pdf-generator' ),
+					'licenseExpires' => __( 'Valid Until', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -486,6 +492,7 @@ class AIPDF_Admin_Page {
 								<p class="description">
 									<?php esc_html_e( 'Powers cloud-based generation. Click "Get Free Trial" for 3 free generations tied to your admin email and this domain, or paste a purchased license key here.', 'ai-pdf-generator' ); ?>
 								</p>
+								<div id="aipdf-license-status-card" style="display: none;"></div>
 							</td>
 						</tr>
 						<tr>

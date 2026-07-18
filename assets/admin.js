@@ -131,6 +131,80 @@
 			} );
 		}() );
 
+		// ---------- Cloud license status (Settings tab) ----------
+		( function () {
+			var $card = $( '#aipdf-license-status-card' ),
+				i18n  = aipdfData.i18n || {};
+
+			if ( ! $card.length || ! aipdfData.cloudMode || ! aipdfData.hasCloudToken ) {
+				return;
+			}
+
+			function row( label, value ) {
+				return $( '<p/>' ).css( { margin: '4px 0' } ).append(
+					$( '<strong/>', { text: label + ': ' } ),
+					document.createTextNode( value )
+				);
+			}
+
+			function renderStatus( data ) {
+				var plan    = data.plan || data.tariff || data.plan_name || '—',
+					credits = ( 'undefined' !== typeof data.credits_remaining ) ? data.credits_remaining
+							: ( 'undefined' !== typeof data.credits ? data.credits : '—' ),
+					domainsUsed  = ( undefined !== data.domains_used )  ? data.domains_used  : ( undefined !== data.sites_used  ? data.sites_used  : null ),
+					domainsLimit = ( undefined !== data.domains_limit ) ? data.domains_limit : ( undefined !== data.sites_limit ? data.sites_limit : null ),
+					expiresRaw   = data.expires_at || data.expiresAt || '',
+					expires      = expiresRaw;
+
+				if ( expiresRaw ) {
+					var d = new Date( expiresRaw );
+					if ( ! isNaN( d.getTime() ) ) {
+						expires = d.toLocaleDateString();
+					}
+				}
+
+				$card.empty().removeClass( 'notice-error' ).addClass( 'notice notice-info' ).css( { padding: '10px 12px', maxWidth: '420px' } );
+
+				$card.append( row( i18n.licensePlan || 'Plan', String( plan ) ) );
+				$card.append( row( i18n.licenseCredits || 'Credits Remaining', String( credits ) ) );
+
+				if ( null !== domainsUsed && null !== domainsLimit ) {
+					$card.append( row( i18n.licenseDomains || 'Domains', domainsUsed + ' / ' + domainsLimit ) );
+				}
+
+				if ( expires ) {
+					$card.append( row( i18n.licenseExpires || 'Valid Until', String( expires ) ) );
+				}
+
+				$card.show();
+			}
+
+			function renderError( message ) {
+				$card.empty().removeClass( 'notice-info' ).addClass( 'notice notice-error' ).css( { padding: '10px 12px', maxWidth: '420px' } );
+				$card.append( $( '<p/>', { text: message, css: { margin: 0 } } ) );
+				$card.show();
+			}
+
+			$.post( aipdfData.ajaxUrl, {
+				action: 'aipdf_check_license_status',
+				nonce:  aipdfData.nonce
+			} )
+				.done( function ( response ) {
+					if ( response && response.success && response.data ) {
+						renderStatus( response.data );
+					} else {
+						renderError( ( response && response.data && response.data.message ) || i18n.error || 'Could not load license status.' );
+					}
+				} )
+				.fail( function ( xhr ) {
+					var message = i18n.error || 'Could not load license status.';
+					if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+						message = xhr.responseJSON.data.message;
+					}
+					renderError( message );
+				} );
+		}() );
+
 		// ==================== CHAT (Playground) ====================
 
 		var $history   = $( '#aipdf-chat-history' ),
