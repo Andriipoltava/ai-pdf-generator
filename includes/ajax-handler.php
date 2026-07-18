@@ -138,12 +138,21 @@ class AIPDF_Ajax_Handler {
 			wp_send_json_error( array( 'message' => $message ), $code );
 		}
 
-		if ( empty( $data['plainTextToken'] ) || ! is_string( $data['plainTextToken'] ) ) {
-			AIPDF_Logger::get_instance()->error( 'Trial response missing plainTextToken.' );
+		// The backend's current contract returns the token as "license_key";
+		// "plainTextToken" is kept as a fallback for older backend versions.
+		$raw_token = '';
+		if ( ! empty( $data['license_key'] ) && is_string( $data['license_key'] ) ) {
+			$raw_token = $data['license_key'];
+		} elseif ( ! empty( $data['plainTextToken'] ) && is_string( $data['plainTextToken'] ) ) {
+			$raw_token = $data['plainTextToken'];
+		}
+
+		if ( '' === $raw_token ) {
+			AIPDF_Logger::get_instance()->error( 'Trial response missing a license token: ' . wp_json_encode( $data ) );
 			wp_send_json_error( array( 'message' => __( 'The licensing server returned an unexpected response.', 'ai-pdf-generator' ) ), 502 );
 		}
 
-		$token = sanitize_text_field( $data['plainTextToken'] );
+		$token = sanitize_text_field( $raw_token );
 		update_option( self::OPTION_CLOUD_TOKEN, $token );
 		update_option( self::OPTION_GENERATION_MODE, 'cloud_service' );
 
