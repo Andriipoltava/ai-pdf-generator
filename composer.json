@@ -5,7 +5,8 @@
     "license": "GPL-2.0-or-later",
     "require": {
         "php": ">=8.0",
-        "mpdf/mpdf": "^8.2"
+        "mpdf/mpdf": "^8.2",
+        "mpdf/qrcode": "^1.2"
     },
     "config": {
         "optimize-autoloader": true,

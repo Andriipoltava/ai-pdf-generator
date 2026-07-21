@@ -1,14 +1,14 @@
 <?php
 /**
- * Доставка download_link: показ посилання на згенерований PDF
- * одразу після дії користувача.
+ * download_link delivery: shows a link to the generated PDF right after
+ * the user's action.
  *
- * - WooCommerce: кнопка на сторінці подяки (woocommerce_thankyou).
- * - CF7 / Elementor Pro: URL додається у JSON-відповідь форми,
- *   фронтенд-JS домальовує кнопку під формою.
- * - Amelia (Vue/AJAX): токен у cookie + transient; на кастомній
- *   сторінці подяки (redirect) кнопку виводить шорткод
- *   [aipdf_download_button].
+ * - WooCommerce: a button on the thank-you page (woocommerce_thankyou).
+ * - CF7 / Elementor Pro: the URL is added to the form's JSON response,
+ *   front-end JS draws a button under the form.
+ * - Amelia (Vue/AJAX): a token in a cookie + transient; on a custom
+ *   thank-you page (redirect) the button is rendered by the
+ *   [aipdf_download_button] shortcode.
  *
  * @package AI_PDF_Generator
  */
@@ -18,50 +18,50 @@ defined( 'ABSPATH' ) || exit;
 class AIPDF_Delivery {
 
 	/**
-	 * Cookie з одноразовим токеном завантаження (для redirect-сценаріїв).
+	 * Cookie holding a one-time download token (for redirect scenarios).
 	 */
 	private const COOKIE = 'aipdf_dl_token';
 
 	/**
-	 * Скільки живе посилання у transient.
+	 * How long the download link's transient lives.
 	 */
 	private const TOKEN_TTL = 15 * MINUTE_IN_SECONDS;
 
 	public function __construct() {
-		// Універсальний перехоплювач: спрацьовує після кожної генерації.
+		// Universal hook: fires after every generation.
 		add_action( 'aipdf_pdf_generated', array( $this, 'store_download' ), 10, 4 );
 
-		// WooCommerce: кнопка на сторінці подяки.
+		// WooCommerce: button on the thank-you page.
 		add_action( 'woocommerce_thankyou', array( $this, 'render_wc_button' ), 20 );
 
-		// CF7: додаємо URL у JSON-відповідь форми.
+		// CF7: add the URL to the form's JSON response.
 		add_filter( 'wpcf7_feedback_response', array( $this, 'cf7_add_download_url' ) );
 
-		// Сторінка подяки для Amelia та інших redirect-сценаріїв.
+		// Thank-you page for Amelia and other redirect scenarios.
 		add_shortcode( 'aipdf_download_button', array( $this, 'render_shortcode' ) );
 
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_frontend' ) );
 	}
 
 	/**
-	 * Після генерації PDF з action_type = download_link:
-	 * - для WooCommerce пишемо URL у мета замовлення (сторінка подяки —
-	 *   це ОКРЕМИЙ запит, тому потрібне постійне сховище);
-	 * - для решти — короткоживучий токен у cookie + transient
-	 *   (працює для Amelia AJAX: заголовки ще не відправлені).
+	 * After generating a PDF with action_type = download_link:
+	 * - for WooCommerce, store the URL in order meta (the thank-you page is
+	 *   a SEPARATE request, so persistent storage is needed);
+	 * - for everything else, a short-lived cookie + transient token
+	 *   (works for Amelia's AJAX flow: headers haven't been sent yet).
 	 *
-	 * @param array{path:string,url:string} $result   Результат рендеру.
-	 * @param string                        $trigger  Тригер.
-	 * @param WP_Post                       $template Пост-шаблон.
-	 * @param array<string, string>         $data     Дані плейсхолдерів.
+	 * @param array{path:string,url:string} $result   Render result.
+	 * @param string                        $trigger  Trigger key.
+	 * @param WP_Post                       $template Template post.
+	 * @param array<string, string>         $data     Placeholder data.
 	 */
 	public function store_download( array $result, string $trigger, WP_Post $template, array $data ): void {
 		if ( 'download_link' !== get_post_meta( $template->ID, '_aipdf_action_type', true ) ) {
 			return;
 		}
 
-		// WooCommerce: постійне сховище в мета замовлення.
-		if ( 'wc_order_paid' === $trigger && ! empty( $data['_wc_order_id'] ) && function_exists( 'wc_get_order' ) ) {
+		// WooCommerce: persistent storage in order meta.
+		if ( 'woocommerce_payment_complete' === $trigger && ! empty( $data['_wc_order_id'] ) && function_exists( 'wc_get_order' ) ) {
 			$order = wc_get_order( (int) $data['_wc_order_id'] );
 			if ( $order ) {
 				$order->update_meta_data( '_aipdf_pdf_url', esc_url_raw( $result['url'] ) );
@@ -70,9 +70,9 @@ class AIPDF_Delivery {
 			return;
 		}
 
-		// Redirect-сценарії (Amelia тощо): токен живе 15 хвилин.
+		// Redirect scenarios (Amelia etc.): the token lives for 15 minutes.
 		if ( headers_sent() ) {
-			return; // Пізно ставити cookie — залишиться лише email/хук.
+			return; // Too late to set a cookie — only the email/hook delivery remains.
 		}
 
 		try {
@@ -97,10 +97,10 @@ class AIPDF_Delivery {
 	}
 
 	/**
-	 * WooCommerce: велика кнопка «Завантажити документ» на сторінці подяки.
+	 * WooCommerce: a large "Download document" button on the thank-you page.
 	 *
-	 * Якщо payment_complete ще не спрацював (COD, банківський переказ) —
-	 * генеруємо PDF прямо тут і зберігаємо в мета, щоб не робити це двічі.
+	 * If payment_complete hasn't fired yet (COD, bank transfer), the PDF is
+	 * generated right here and cached in meta, to avoid doing it twice.
 	 */
 	public function render_wc_button( $order_id ): void {
 		if ( ! function_exists( 'wc_get_order' ) ) {
@@ -116,7 +116,7 @@ class AIPDF_Delivery {
 
 		if ( '' === $url ) {
 			$renderer = new AIPDF_PDF_Renderer();
-			$template = $renderer->find_template_by_trigger( 'wc_order_paid' );
+			$template = $renderer->find_template_by_trigger( 'woocommerce_payment_complete' );
 
 			if ( ! $template || 'download_link' !== get_post_meta( $template->ID, '_aipdf_action_type', true ) ) {
 				return;
@@ -144,16 +144,16 @@ class AIPDF_Delivery {
 		printf(
 			'<div class="aipdf-download-wrap" style="margin:24px 0;"><a href="%s" target="_blank" rel="noopener" class="button aipdf-download-btn" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:600;">%s</a></div>',
 			esc_url( $url ),
-			esc_html( apply_filters( 'aipdf_download_button_text', __( 'Завантажити ваш документ (PDF)', 'ai-pdf-generator' ) ) )
+			esc_html( apply_filters( 'aipdf_download_button_text', __( 'Download your document (PDF)', 'ai-pdf-generator' ) ) )
 		);
 	}
 
 	/**
-	 * CF7: наш обробник wpcf7_mail_sent уже відпрацював у ЦЬОМУ Ж запиті,
-	 * тож просто додаємо URL у відповідь. Кнопку домалює frontend.js
-	 * за подією wpcf7mailsent.
+	 * CF7: our wpcf7_mail_sent handler has already run within THIS SAME
+	 * request, so we just add the URL to the response. frontend.js draws
+	 * the button on the wpcf7mailsent event.
 	 *
-	 * @param array<string, mixed> $response JSON-відповідь CF7.
+	 * @param array<string, mixed> $response CF7's JSON response.
 	 */
 	public function cf7_add_download_url( $response ) {
 		$url = AIPDF_Trigger_Dispatcher::last_download_url();
@@ -165,16 +165,17 @@ class AIPDF_Delivery {
 	}
 
 	/**
-	 * Шорткод для кастомної сторінки подяки (Amelia redirect тощо):
-	 * [aipdf_download_button text="Завантажити квиток"]
+	 * Shortcode for a custom thank-you page (Amelia redirect, etc.):
+	 * [aipdf_download_button text="Download ticket"]
 	 *
-	 * УВАГА: сторінку з шорткодом треба виключити з кешу (токен персональний).
+	 * NOTE: the page containing the shortcode must be excluded from caching
+	 * (the token is personal to the visitor).
 	 *
-	 * @param array<string, string>|string $atts Атрибути шорткода.
+	 * @param array<string, string>|string $atts Shortcode attributes.
 	 */
 	public function render_shortcode( $atts ): string {
 		$atts = shortcode_atts(
-			array( 'text' => __( 'Завантажити ваш документ (PDF)', 'ai-pdf-generator' ) ),
+			array( 'text' => __( 'Download your document (PDF)', 'ai-pdf-generator' ) ),
 			$atts,
 			'aipdf_download_button'
 		);
@@ -197,7 +198,7 @@ class AIPDF_Delivery {
 	}
 
 	/**
-	 * Фронтенд-JS потрібен лише коли активні CF7 або Elementor Pro.
+	 * Front-end JS is only needed when CF7 or Elementor Pro is active.
 	 */
 	public function enqueue_frontend(): void {
 		if ( ! defined( 'WPCF7_VERSION' ) && ! defined( 'ELEMENTOR_PRO_VERSION' ) ) {
@@ -216,7 +217,7 @@ class AIPDF_Delivery {
 			'aipdf-frontend',
 			'aipdfFront',
 			array(
-				'buttonText' => apply_filters( 'aipdf_download_button_text', __( 'Завантажити ваш документ (PDF)', 'ai-pdf-generator' ) ),
+				'buttonText' => apply_filters( 'aipdf_download_button_text', __( 'Download your document (PDF)', 'ai-pdf-generator' ) ),
 			)
 		);
 	}
