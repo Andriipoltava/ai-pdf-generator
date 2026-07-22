@@ -26,10 +26,6 @@
 
 			$( '.aipdf-tab' ).hide();
 			$( '#aipdf-tab-' + name ).show();
-
-			if ( 'license' === name ) {
-				fetchLicenseStatus();
-			}
 		}
 
 		$( '#aipdf-tabs' ).on( 'click', '.nav-tab', function ( e ) {
@@ -42,8 +38,8 @@
 			}
 		} );
 
-		// Promo banner + onboarding step links — same tab-switch, from outside #aipdf-tabs.
-		$( document ).on( 'click', '#aipdf-promo-banner .aipdf-promo-link, .aipdf-onboard-link', function ( e ) {
+		// Onboarding step links — same tab-switch, from outside #aipdf-tabs.
+		$( document ).on( 'click', '.aipdf-onboard-link', function ( e ) {
 			e.preventDefault();
 			var name = ( $( this ).attr( 'href' ) || '' ).replace( '#', '' );
 			if ( ! name ) {
@@ -105,193 +101,6 @@
 				$( this ).hide();
 			} );
 		}() );
-
-		// ---------- Generation Mode: show only the relevant key field ----------
-		( function () {
-			var $modeRadios  = $( '#aipdf-mode-own, #aipdf-mode-cloud' ),
-				$apiKeyRow   = $( '#aipdf-row-api-key' ),
-				$cloudRow    = $( '#aipdf-row-cloud-token' );
-
-			if ( ! $modeRadios.length ) {
-				return;
-			}
-
-			function syncFieldVisibility() {
-				var isCloud = $( '#aipdf-mode-cloud' ).is( ':checked' );
-				$apiKeyRow.toggle( ! isCloud );
-				$cloudRow.toggle( isCloud );
-			}
-
-			$modeRadios.on( 'change', syncFieldVisibility );
-			syncFieldVisibility();
-		}() );
-
-		// ---------- Cloud trial activation (License tab) ----------
-		( function () {
-			var $btn  = $( '#aipdf-get-trial-btn' ),
-				i18n  = aipdfData.i18n || {};
-
-			if ( ! $btn.length ) {
-				return; // No license key saved yet is required for this button to render server-side.
-			}
-
-			function resetButton() {
-				$btn.prop( 'disabled', false ).text( i18n.trialButton || 'Get Free Trial (3 Generations)' );
-			}
-
-			$btn.on( 'click', function () {
-				$btn.prop( 'disabled', true ).text( i18n.trialRequesting || 'Requesting…' );
-
-				$.post( aipdfData.ajaxUrl, {
-					action: 'aipdf_get_trial',
-					nonce:  aipdfData.nonce
-				} )
-					.done( function ( response ) {
-						if ( response && response.success ) {
-							var token = response.data && response.data.token;
-
-							if ( token ) {
-								$( '#aipdf-cloud-token' ).val( token );
-							}
-
-							// Switch to Cloud Service without a full page reload —
-							// the backend already flipped the option server-side,
-							// this just brings the UI in sync immediately.
-							$( '#aipdf-mode-cloud' ).prop( 'checked', true ).trigger( 'change' );
-
-							aipdfData.cloudMode     = true;
-							aipdfData.hasCloudToken = true;
-
-							$btn.fadeOut();
-
-							fetchLicenseStatus();
-							return;
-						}
-						window.alert( ( response && response.data && response.data.message ) || i18n.error || 'Something went wrong.' );
-						resetButton();
-					} )
-					.fail( function ( xhr ) {
-						var message = i18n.error || 'Something went wrong.';
-						if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
-							message = xhr.responseJSON.data.message;
-						}
-						window.alert( message );
-						resetButton();
-					} );
-			} );
-		}() );
-
-		// ---------- Cloud license status dashboard (License tab) ----------
-		var licenseStatusRequested = false;
-
-		function fetchLicenseStatus() {
-			var $card = $( '#aipdf-license-status-card' ),
-				i18n  = aipdfData.i18n || {};
-
-			if ( ! $card.length || ! aipdfData.cloudMode || ! aipdfData.hasCloudToken || licenseStatusRequested ) {
-				return;
-			}
-			licenseStatusRequested = true;
-
-			function tile( label, value ) {
-				return $( '<div/>', { class: 'aipdf-dash-tile' } ).append(
-					$( '<div/>', { class: 'aipdf-dash-tile-label', text: label } ),
-					$( '<div/>', { class: 'aipdf-dash-tile-value' } ).append( document.createTextNode( value ) )
-				);
-			}
-
-			function renderStatus( data ) {
-				var plan         = data.plan_name || data.plan || data.tariff || '—',
-					billingCycle = data.billing_cycle || '',
-					credits      = ( undefined !== data.credits_balance ) ? data.credits_balance
-								 : ( undefined !== data.credits_remaining ? data.credits_remaining
-								 : ( undefined !== data.credits ? data.credits : '—' ) ),
-					domainsUsed  = ( undefined !== data.domains_used ) ? data.domains_used : ( undefined !== data.sites_used ? data.sites_used : null ),
-					domainsLimit = ( undefined !== data.domain_limit ) ? data.domain_limit : ( undefined !== data.domains_limit ? data.domains_limit : ( undefined !== data.sites_limit ? data.sites_limit : undefined ) ),
-					expiresRaw   = data.expires_at || data.expiresAt || null,
-					expires;
-
-				var planText = String( plan );
-				if ( billingCycle ) {
-					planText += ' (' + billingCycle + ')';
-				}
-
-				if ( expiresRaw ) {
-					var d = new Date( expiresRaw );
-					expires = isNaN( d.getTime() ) ? String( expiresRaw ) : d.toLocaleDateString();
-				} else {
-					expires = i18n.licenseNoExpiration || 'No Expiration';
-				}
-
-				var domainsText;
-				if ( null === domainsLimit || undefined === domainsLimit ) {
-					domainsText = ( null !== domainsUsed && undefined !== domainsUsed )
-						? domainsUsed + ' / ' + ( i18n.licenseUnlimited || 'Unlimited' )
-						: ( i18n.licenseUnlimited || 'Unlimited' );
-				} else {
-					domainsText = ( null !== domainsUsed && undefined !== domainsUsed ? domainsUsed : '—' ) + ' / ' + domainsLimit;
-				}
-
-				$card
-					.empty()
-					.removeClass( 'notice notice-info notice-error aipdf-license-card' )
-					.addClass( 'aipdf-dash' );
-
-				var $header = $( '<div/>', { class: 'aipdf-dash-header' } ).append(
-					$( '<span/>', { class: 'aipdf-dash-dot' } ),
-					$( '<span/>', { class: 'aipdf-dash-title' } ).text(
-						( i18n.licenseActivePlan || 'Active Plan:' ) + ' ' + planText
-					)
-				);
-
-				var $grid = $( '<div/>', { class: 'aipdf-dash-grid' } ).append(
-					tile( i18n.licenseCredits || 'Credits Remaining', String( credits ) ),
-					tile( i18n.licenseDomains || 'Domains', domainsText ),
-					tile( i18n.licenseExpires || 'Valid Until', expires )
-				);
-
-				$card.append( $header, $grid ).show();
-
-				// A valid, active license — collapse the technical fields and
-				// leave just the dashboard visible.
-				$( '#aipdf-license-settings-wrap' ).removeAttr( 'open' );
-			}
-
-			function renderError( message ) {
-				$card
-					.empty()
-					.removeClass( 'aipdf-dash' )
-					.addClass( 'notice notice-error aipdf-license-card' );
-				$card.append( $( '<p/>', { text: message, css: { margin: 0 } } ) );
-				$card.show();
-
-				// No usable license status — keep the key fields and pricing
-				// table visible so the user can act.
-				$( '#aipdf-license-settings-wrap' ).attr( 'open', '' );
-			}
-
-			$.post( aipdfData.ajaxUrl, {
-				action: 'aipdf_check_license_status',
-				nonce:  aipdfData.nonce
-			} )
-				.done( function ( response ) {
-					if ( response && response.success && response.data ) {
-						renderStatus( response.data );
-					} else {
-						renderError( ( response && response.data && response.data.message ) || i18n.error || 'Could not load license status.' );
-					}
-				} )
-				.fail( function ( xhr ) {
-					var message = i18n.error || 'Could not load license status.';
-					if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
-						message = xhr.responseJSON.data.message;
-					}
-					renderError( message );
-				} )
-				.always( function () {
-					licenseStatusRequested = false;
-				} );
-		}
 
 		// ==================== CHAT (Playground) ====================
 
