@@ -345,6 +345,7 @@ class AIPDF_Admin_Page {
 					'actionEmail'  => __( 'email attachment', 'ai-pdf-generator' ),
 					'actionDl'     => __( 'download link', 'ai-pdf-generator' ),
 					'welcomeMsg'   => __( 'Describe the document you need, or start from a ready-made example below.', 'ai-pdf-generator' ),
+					'downloadPdf'  => __( 'Download PDF', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -618,7 +619,25 @@ class AIPDF_Admin_Page {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'PDF Generator', 'ai-pdf-generator' ); ?></h1>
 
-			<div class="aipdf-chat-layout" style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;margin-top:16px;">
+			<!-- ============ Block 2: Ready-made templates (no AI/API key needed) ============ -->
+			<style>
+				.aipdf-static-template-btn { transition: background-color .15s ease, border-color .15s ease; }
+				.aipdf-static-template-btn:disabled { opacity: .6; }
+			</style>
+			<div class="aipdf-static-templates" style="margin-top:16px;padding:16px 20px;background:#fff;border:1px solid #ccd0d4;border-radius:6px;max-width:760px;">
+				<h2 style="margin-top:0;"><?php esc_html_e( 'Ready-made Templates (Works without API Keys)', 'ai-pdf-generator' ); ?></h2>
+				<p class="description" style="margin-bottom:10px;">
+					<?php esc_html_e( 'These are built-in layouts rendered directly to PDF — no AI, no API key required. Your branding (logo, color, company details) is applied automatically.', 'ai-pdf-generator' ); ?>
+				</p>
+				<p style="margin:0 0 10px;display:flex;gap:8px;flex-wrap:wrap;">
+					<button type="button" class="button button-hero aipdf-static-template-btn" data-template="invoice">🧾 <?php esc_html_e( 'Generate Invoice', 'ai-pdf-generator' ); ?></button>
+					<button type="button" class="button button-hero aipdf-static-template-btn" data-template="certificate">🎓 <?php esc_html_e( 'Generate Certificate', 'ai-pdf-generator' ); ?></button>
+				</p>
+				<div id="aipdf-static-result" style="display:none;"></div>
+			</div>
+
+			<h2 style="margin-top:28px;"><?php esc_html_e( 'Generate with AI', 'ai-pdf-generator' ); ?></h2>
+			<div class="aipdf-chat-layout" style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;margin-top:8px;">
 
 				<!-- Left column: chat -->
 				<div class="aipdf-chat-col" style="flex:1 1 420px;min-width:340px;max-width:560px;">
@@ -660,33 +679,6 @@ class AIPDF_Admin_Page {
 						<button type="button" class="button button-small" id="aipdf-ref-remove" style="display:none;"><?php esc_html_e( 'Remove', 'ai-pdf-generator' ); ?></button>
 						<img id="aipdf-ref-preview" src="" alt="" style="display:none;max-height:32px;vertical-align:middle;margin-left:6px;border:1px solid #ddd;padding:1px;background:#fff;" />
 						<span id="aipdf-ref-hint" class="description" style="display:none;margin-left:6px;font-size:11px;"><?php esc_html_e( 'will be attached to the next message', 'ai-pdf-generator' ); ?></span>
-					</p>
-
-					<!-- Quick-start templates -->
-					<style>
-						.aipdf-template-btn { transition: background-color .15s ease, border-color .15s ease; }
-						.aipdf-template-btn.aipdf-template-flash { background-color: #d4edda !important; border-color: #34a853 !important; }
-						#aipdf-chat-input.aipdf-template-flash { background-color: #d4edda; transition: background-color .15s ease; }
-					</style>
-					<p style="margin:0 0 6px;color:#646970;font-size:12px;">
-						<?php esc_html_e( "Not sure where to start? Choose a ready-made template:", 'ai-pdf-generator' ); ?>
-					</p>
-					<p style="margin:0 0 10px;display:flex;gap:6px;flex-wrap:wrap;">
-						<button
-							type="button"
-							class="button aipdf-template-btn"
-							data-prompt="<?php echo esc_attr__( "Generate a professional invoice for development services. Client: [Client Name]. Amount: [Enter amount]. Format: strict business style, with a services table and a total.", 'ai-pdf-generator' ); ?>"
-						>📄 <?php esc_html_e( 'Invoice', 'ai-pdf-generator' ); ?></button>
-						<button
-							type="button"
-							class="button aipdf-template-btn"
-							data-prompt="<?php echo esc_attr__( "Create a beautiful certificate of course completion. Student: [Student Name]. Date: [Today's date]. Add a congratulatory message and a place for the instructor's signature.", 'ai-pdf-generator' ); ?>"
-						>🎓 <?php esc_html_e( 'Certificate', 'ai-pdf-generator' ); ?></button>
-						<button
-							type="button"
-							class="button aipdf-template-btn"
-							data-prompt="<?php echo esc_attr__( 'Create a professional PDF report based on the following text: [Paste your text here]. Highlight the key points as a bulleted list and add a brief conclusion.', 'ai-pdf-generator' ); ?>"
-						>📝 <?php esc_html_e( 'Short Report', 'ai-pdf-generator' ); ?></button>
 					</p>
 
 					<!-- Input field + send -->

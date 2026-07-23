@@ -57,13 +57,6 @@ class AIPDF_PDF_Renderer {
 	 * @return string|WP_Error PDF as a binary string.
 	 */
 	public function render( int $post_id, array $data ) {
-		if ( ! self::is_available() ) {
-			return new WP_Error(
-				'aipdf_no_mpdf',
-				__( 'The mPDF library is not installed. Run `composer install` inside the plugin folder.', 'ai-pdf-generator' )
-			);
-		}
-
 		$post = get_post( $post_id );
 		if ( ! $post || AIPDF_Plugin::CPT !== $post->post_type ) {
 			return new WP_Error( 'aipdf_no_template', __( 'Template not found.', 'ai-pdf-generator' ) );
@@ -77,13 +70,27 @@ class AIPDF_PDF_Renderer {
 			$data
 		);
 
-		$html = $this->fill_placeholders( $post->post_content, $data );
-
+		$html       = $this->fill_placeholders( $post->post_content, $data );
 		$paper_size = (string) get_post_meta( $post_id, '_aipdf_paper_size', true );
+
+		return $this->render_html( $html, $post->post_title, $paper_size );
+	}
+
+	/**
+	 * Renders already-substituted HTML into PDF bytes. Shared by render()
+	 * (AI-generated CPT templates) and static, no-AI templates.
+	 */
+	public function render_html( string $html, string $title, string $paper_size = 'A4' ) {
+		if ( ! self::is_available() ) {
+			return new WP_Error(
+				'aipdf_no_mpdf',
+				__( 'The mPDF library is not installed. Run `composer install` inside the plugin folder.', 'ai-pdf-generator' )
+			);
+		}
 
 		try {
 			$mpdf = new \Mpdf\Mpdf( $this->build_mpdf_config( $paper_size ) );
-			$mpdf->SetTitle( $post->post_title );
+			$mpdf->SetTitle( $title );
 			// UTF-8 and Cyrillic work out of the box: mode 'utf-8' + DejaVu Sans.
 			$mpdf->WriteHTML( $html );
 
@@ -119,6 +126,41 @@ class AIPDF_PDF_Renderer {
 		// Unpredictable filename so the URL can't be guessed.
 		$filename = sanitize_file_name(
 			sprintf( 'pdf-%d-%s.pdf', $post_id, wp_generate_password( 16, false ) )
+		);
+		$path     = trailingslashit( $dir ) . $filename;
+
+		if ( false === file_put_contents( $path, $pdf ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions -- local write inside uploads.
+			return new WP_Error( 'aipdf_write_failed', __( 'Failed to write the PDF file.', 'ai-pdf-generator' ) );
+		}
+
+		$uploads = wp_upload_dir();
+
+		return array(
+			'path' => $path,
+			'url'  => trailingslashit( $uploads['baseurl'] ) . self::UPLOADS_SUBDIR . '/' . $filename,
+		);
+	}
+
+	/**
+	 * Renders already-substituted HTML straight to a file — for static,
+	 * no-AI templates that aren't tied to a CPT post.
+	 *
+	 * @return array{path:string,url:string}|WP_Error
+	 */
+	public function render_html_to_file( string $html, string $title, string $paper_size, string $filename_prefix = 'static' ) {
+		$pdf = $this->render_html( $html, $title, $paper_size );
+		if ( is_wp_error( $pdf ) ) {
+			return $pdf;
+		}
+
+		$dir = $this->get_storage_dir();
+		if ( is_wp_error( $dir ) ) {
+			return $dir;
+		}
+
+		// Unpredictable filename so the URL can't be guessed.
+		$filename = sanitize_file_name(
+			sprintf( '%s-%s.pdf', $filename_prefix, wp_generate_password( 16, false ) )
 		);
 		$path     = trailingslashit( $dir ) . $filename;
 

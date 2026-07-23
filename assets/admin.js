@@ -272,26 +272,65 @@
 			}, 350, this );
 		} );
 
-		// ---------- Quick-start templates: fill the prompt in one click ----------
-		$( document ).on( 'click', '.aipdf-template-btn', function () {
-			var prompt = $( this ).data( 'prompt' ),
-				$btn   = $( this );
+		// ---------- Static (no-AI) templates: render straight to PDF ----------
+		( function () {
+			var $result = $( '#aipdf-static-result' ),
+				i18n    = aipdfData.i18n || {};
 
-			if ( ! prompt || ! $input.length ) {
-				return;
-			}
+			$( document ).on( 'click', '.aipdf-static-template-btn', function () {
+				var $btn         = $( this ),
+					template     = $btn.data( 'template' ),
+					originalText = $btn.text();
 
-			$input.val( prompt ).trigger( 'focus' );
+				if ( ! template ) {
+					return;
+				}
 
-			// Brief highlight on both the clicked template and the field it
-			// just filled, so the fill is visually obvious.
-			$btn.addClass( 'aipdf-template-flash' );
-			$input.addClass( 'aipdf-template-flash' );
-			setTimeout( function () {
-				$btn.removeClass( 'aipdf-template-flash' );
-				$input.removeClass( 'aipdf-template-flash' );
-			}, 400 );
-		} );
+				// Same "busy" treatment as the AI generation button: disable
+				// + show a sending state, so the user gets the same loading
+				// feedback regardless of which path they used.
+				$( '.aipdf-static-template-btn' ).prop( 'disabled', true );
+				$btn.text( i18n.sending || 'Sending…' );
+				$result.hide().empty();
+
+				$.post( aipdfData.ajaxUrl, {
+					action:   'aipdf_generate_static_template',
+					nonce:    aipdfData.nonce,
+					template: template
+				} )
+					.done( function ( response ) {
+						if ( response && response.success && response.data && response.data.url ) {
+							$result
+								.empty()
+								.append(
+									$( '<a/>', {
+										href:   response.data.url,
+										target: '_blank',
+										class:  'button button-primary',
+										text:   i18n.downloadPdf || 'Download PDF'
+									} )
+								)
+								.show();
+							return;
+						}
+						$result
+							.empty()
+							.append( $( '<p/>', { style: 'color:#b32d2e;', text: ( response && response.data && response.data.message ) || i18n.error || 'Something went wrong.' } ) )
+							.show();
+					} )
+					.fail( function ( xhr ) {
+						var message = i18n.error || 'Something went wrong.';
+						if ( xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+							message = xhr.responseJSON.data.message;
+						}
+						$result.empty().append( $( '<p/>', { style: 'color:#b32d2e;', text: message } ) ).show();
+					} )
+					.always( function () {
+						$( '.aipdf-static-template-btn' ).prop( 'disabled', false );
+						$btn.text( originalText );
+					} );
+			} );
+		}() );
 
 		// ---------- Live client-side preview: {{key}} substitution, no AJAX ----------
 

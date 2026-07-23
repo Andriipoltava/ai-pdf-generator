@@ -27,6 +27,137 @@ class AIPDF_Ajax_Handler {
 		// Logged-in admins only — wp_ajax_nopriv is deliberately not registered.
 		add_action( 'wp_ajax_aipdf_chat', array( $this, 'handle_chat' ) );
 		add_action( 'wp_ajax_aipdf_save', array( $this, 'handle_save' ) );
+		add_action( 'wp_ajax_aipdf_generate_static_template', array( $this, 'handle_generate_static_template' ) );
+	}
+
+	/**
+	 * Generates one of the built-in, no-AI static templates (Invoice,
+	 * Certificate) straight to a PDF file — no Gemini/OpenAI call, so this
+	 * works even before any API key has been configured. Branding (logo,
+	 * color, company details) is still applied via AIPDF_Brand.
+	 */
+	public function handle_generate_static_template(): void {
+		check_ajax_referer( 'aipdf_generate', 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'ai-pdf-generator' ) ), 403 );
+		}
+
+		$template = isset( $_POST['template'] ) ? sanitize_key( wp_unslash( $_POST['template'] ) ) : '';
+
+		$templates = array(
+			'invoice'     => array( $this->static_invoice_html(), __( 'Invoice', 'ai-pdf-generator' ) ),
+			'certificate' => array( $this->static_certificate_html(), __( 'Certificate', 'ai-pdf-generator' ) ),
+		);
+
+		if ( ! isset( $templates[ $template ] ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unknown template.', 'ai-pdf-generator' ) ), 400 );
+		}
+
+		list( $html, $title ) = $templates[ $template ];
+
+		// Same sanitization as an AI-generated template, then substitute
+		// branding — real values where set, sensible sample ones otherwise.
+		$html = AIPDF_PDF_Renderer::sanitize_html( $html );
+		$html = AIPDF_PDF_Renderer::substitute(
+			$html,
+			array_merge(
+				AIPDF_Brand::sample_placeholders(),
+				array( 'date' => wp_date( get_option( 'date_format' ) ) )
+			)
+		);
+
+		$renderer = new AIPDF_PDF_Renderer();
+		$result   = $renderer->render_html_to_file( $html, $title, 'A4', 'static-' . $template );
+
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( array( 'message' => $result->get_error_message() ), 500 );
+		}
+
+		wp_send_json_success( array( 'url' => $result['url'] ) );
+	}
+
+	/**
+	 * Static invoice layout: table-based (mPDF-safe, no flexbox/grid),
+	 * branding placeholders + representative sample data.
+	 */
+	private function static_invoice_html(): string {
+		return <<<HTML
+<table width="100%" cellpadding="0" cellspacing="0" style="font-family: DejaVu Sans, sans-serif; padding: 40px;">
+	<tr>
+		<td>
+			<table width="100%" cellpadding="0" cellspacing="0">
+				<tr>
+					<td width="50%"><img src="{{logo_url}}" width="160" height="55" alt="Logo" /></td>
+					<td width="50%" align="right" style="font-size: 30px; font-weight: bold; color: {{brand_color}};">INVOICE</td>
+				</tr>
+			</table>
+			<div style="border-bottom: 2px solid {{brand_color}}; margin: 16px 0 24px;"></div>
+			<table width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px; color: #333333;">
+				<tr>
+					<td width="50%" valign="top">
+						<strong>{{company_name}}</strong><br />
+						{{company_address}}<br />
+						{{company_email}}
+					</td>
+					<td width="50%" valign="top" align="right">
+						<strong>Invoice #:</strong> INV-2024-001<br />
+						<strong>Date:</strong> {{date}}<br />
+						<strong>Bill To:</strong> Client Name
+					</td>
+				</tr>
+			</table>
+			<table width="100%" cellpadding="8" cellspacing="0" style="margin-top: 30px; font-size: 13px; border-collapse: collapse;">
+				<tr style="background-color: {{brand_color}}; color: #ffffff;">
+					<td><strong>Description</strong></td>
+					<td align="right"><strong>Amount</strong></td>
+				</tr>
+				<tr style="border-bottom: 1px solid #dddddd;">
+					<td>Development services</td>
+					<td align="right">\$500.00</td>
+				</tr>
+				<tr style="border-bottom: 1px solid #dddddd;">
+					<td>Consulting</td>
+					<td align="right">\$150.00</td>
+				</tr>
+				<tr>
+					<td align="right"><strong>Total</strong></td>
+					<td align="right"><strong>\$650.00</strong></td>
+				</tr>
+			</table>
+		</td>
+	</tr>
+</table>
+HTML;
+	}
+
+	/**
+	 * Static certificate layout: table-based, bordered, large centered name.
+	 */
+	private function static_certificate_html(): string {
+		return <<<HTML
+<table width="100%" height="100%" cellpadding="0" cellspacing="0" style="border: 8px solid {{brand_color}}; font-family: DejaVu Sans, sans-serif;">
+	<tr>
+		<td align="center" valign="middle" style="padding: 60px;">
+			<img src="{{logo_url}}" width="140" height="50" alt="Logo" /><br /><br />
+			<span style="font-size: 36px; letter-spacing: 4px; color: {{brand_color}}; font-weight: bold;">CERTIFICATE</span><br />
+			<span style="font-size: 14px; color: #666666;">OF ACHIEVEMENT</span><br /><br /><br />
+			<span style="font-size: 14px; color: #666666;">This certificate is proudly presented to</span><br />
+			<span style="font-size: 30px; font-weight: bold; border-bottom: 2px solid {{brand_color}}; padding: 0 40px 6px;">Ivan Ivanov</span><br /><br />
+			<span style="font-size: 14px; color: #666666;">for successfully completing the course</span><br /><br /><br /><br />
+			<table width="100%" cellpadding="0" cellspacing="0">
+				<tr>
+					<td width="45%" align="center">________________________<br />Date</td>
+					<td width="10%">&nbsp;</td>
+					<td width="45%" align="center">________________________<br />Instructor Signature</td>
+				</tr>
+			</table>
+			<br />
+			<span style="font-size: 12px; color: #999999;">{{company_name}}</span>
+		</td>
+	</tr>
+</table>
+HTML;
 	}
 
 	/**
