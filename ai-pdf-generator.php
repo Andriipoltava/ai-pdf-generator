@@ -1,19 +1,21 @@
 <?php
 /**
  * Plugin Name:       AI PDF Generator
- * Plugin URI:        https://example.com/ai-pdf-generator
- * Description:       Generates HTML templates for PDF documents via the Gemini API and stores them in a hidden CPT.
- * Version:           0.2.0
+ * Plugin URI:        https://github.com/Andriipoltava/ai-pdf-generator
+ * Description:       Generate professional PDF documents, invoices, and certificates instantly using your own OpenAI or Google Gemini API key.
+ * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
- * Author:            Andrii
+ * Author:            Andrii Omelianenko
+ * Author URI:        https://github.com/Andriipoltava
  * License:           GPL-2.0-or-later
+ * License URI:       http://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       ai-pdf-generator
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'AIPDF_VERSION', '0.2.0' );
+define( 'AIPDF_VERSION', '1.0.0' );
 define( 'AIPDF_PLUGIN_FILE', __FILE__ );
 define( 'AIPDF_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIPDF_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
