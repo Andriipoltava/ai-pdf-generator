@@ -59,9 +59,6 @@
 			if ( ! initial && search.indexOf( 'settings-updated=true' ) !== -1 ) {
 				initial = 'settings';
 			}
-			if ( ! initial && search.indexOf( 'aipdf_log_cleared=1' ) !== -1 ) {
-				initial = 'logs';
-			}
 
 			activateTab( initial || 'instructions' );
 		}() );
@@ -100,6 +97,26 @@
 				$preview.attr( 'src', '' ).hide();
 				$( this ).hide();
 			} );
+		}() );
+
+		// ---------- AI Provider: show only the matching key field ----------
+		( function () {
+			var $select    = $( '#aipdf_ai_provider' ),
+				$geminiRow = $( '#aipdf-row-gemini-key' ),
+				$openaiRow = $( '#aipdf-row-openai-key' );
+
+			if ( ! $select.length ) {
+				return;
+			}
+
+			function syncKeyRowVisibility() {
+				var isOpenAi = 'openai' === $select.val();
+				$geminiRow.toggle( ! isOpenAi );
+				$openaiRow.toggle( isOpenAi );
+			}
+
+			$select.on( 'change', syncKeyRowVisibility );
+			syncKeyRowVisibility();
 		}() );
 
 		// ==================== CHAT (Playground) ====================

@@ -64,10 +64,7 @@ class AIPDF_Trigger_Dispatcher {
 
 		$result = $this->renderer->render_to_file( $template->ID, $data );
 		if ( is_wp_error( $result ) ) {
-			// Don't break someone else's process (payment/booking) — just log it.
-			AIPDF_Logger::get_instance()->error(
-				sprintf( 'Generation for trigger %s failed: %s', $trigger, $result->get_error_message() )
-			);
+			// Don't break someone else's process (payment/booking).
 			return;
 		}
 
@@ -287,17 +284,7 @@ class AIPDF_Trigger_Dispatcher {
 			$data
 		);
 
-		$sent = wp_mail( $email, $subject, $body, array(), array( $pdf_path ) );
-
-		if ( $sent ) {
-			AIPDF_Logger::get_instance()->info(
-				sprintf( 'Email with PDF (template #%d) sent to %s.', $template->ID, $email )
-			);
-		} else {
-			AIPDF_Logger::get_instance()->error(
-				sprintf( 'wp_mail failed to send the PDF email (template #%d) to %s.', $template->ID, $email )
-			);
-		}
+		wp_mail( $email, $subject, $body, array(), array( $pdf_path ) );
 	}
 
 	/**

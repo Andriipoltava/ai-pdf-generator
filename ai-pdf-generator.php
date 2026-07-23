@@ -23,7 +23,6 @@ if ( file_exists( AIPDF_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
 	require_once AIPDF_PLUGIN_DIR . 'vendor/autoload.php';
 }
 
-require_once AIPDF_PLUGIN_DIR . 'includes/logger.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/triggers.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/fields.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/brand.php';
@@ -55,6 +54,16 @@ final class AIPDF_Plugin {
 	 * Option name that stores the Gemini API key.
 	 */
 	public const OPTION_API_KEY = 'aipdf_gemini_api_key';
+
+	/**
+	 * Option name that stores the OpenAI API key.
+	 */
+	public const OPTION_OPENAI_API_KEY = 'aipdf_openai_api_key';
+
+	/**
+	 * Option name that stores which AI provider generation uses ('gemini' | 'openai').
+	 */
+	public const OPTION_AI_PROVIDER = 'aipdf_ai_provider';
 
 	/**
 	 * Admin settings page slug.

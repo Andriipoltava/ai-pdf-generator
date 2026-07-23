@@ -31,13 +31,26 @@ class AIPDF_Ajax_Handler {
 
 	/**
 	 * Shared access check + API key retrieval. Ends the request with an
-	 * error if something's wrong; otherwise returns the API key.
+	 * error if something's wrong; otherwise returns [provider, api_key] for
+	 * whichever AI provider is currently selected in Settings.
+	 *
+	 * @return array{0:string,1:string}
 	 */
-	private function guard_and_key(): string {
+	private function guard_and_key(): array {
 		check_ajax_referer( 'aipdf_generate', 'nonce' );
 
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'ai-pdf-generator' ) ), 403 );
+		}
+
+		$provider = (string) get_option( AIPDF_Plugin::OPTION_AI_PROVIDER, 'gemini' );
+
+		if ( 'openai' === $provider ) {
+			$api_key = (string) get_option( AIPDF_Plugin::OPTION_OPENAI_API_KEY, '' );
+			if ( '' === $api_key ) {
+				wp_send_json_error( array( 'message' => __( 'Please save your OpenAI API key in Settings first.', 'ai-pdf-generator' ) ), 400 );
+			}
+			return array( 'openai', $api_key );
 		}
 
 		// A constant in wp-config.php takes priority over the DB option.
@@ -48,7 +61,7 @@ class AIPDF_Ajax_Handler {
 			wp_send_json_error( array( 'message' => __( 'Please save your Gemini API key in Settings first.', 'ai-pdf-generator' ) ), 400 );
 		}
 
-		return $api_key;
+		return array( 'gemini', $api_key );
 	}
 
 	/**
@@ -65,7 +78,7 @@ class AIPDF_Ajax_Handler {
 	 * No post is created here: only a preview, until an explicit "Save Template".
 	 */
 	public function handle_chat(): void {
-		$api_key = $this->guard_and_key();
+		list( $provider, $api_key ) = $this->guard_and_key();
 
 		$user_prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
 		if ( '' === $user_prompt ) {
@@ -88,7 +101,7 @@ class AIPDF_Ajax_Handler {
 			$turn['image'] = $image;
 		}
 
-		$template = $this->ask_gemini( $api_key, array( $turn ) );
+		$template = $this->ask_ai( $provider, $api_key, array( $turn ) );
 		if ( is_wp_error( $template ) ) {
 			wp_send_json_error( array( 'message' => $this->friendly_ai_error( $template ) ), 502 );
 		}
@@ -177,7 +190,6 @@ class AIPDF_Ajax_Handler {
 		// 5 MB limit — to avoid bloating the API request.
 		$size = filesize( $path );
 		if ( false === $size || $size > 5 * 1024 * 1024 ) {
-			AIPDF_Logger::get_instance()->warning( 'Reference image too large (>5MB) — skipped.' );
 			return null;
 		}
 
@@ -236,32 +248,22 @@ class AIPDF_Ajax_Handler {
 	}
 
 	/**
-	 * Calls Gemini + parses/validates the response. Returns a normalized
-	 * template or a WP_Error (with logging).
+	 * Calls the selected AI provider + parses/validates the response.
+	 * Returns a normalized template or a WP_Error.
 	 *
 	 * @param array<int, array{role:string,text:string}> $contents
 	 * @return array|WP_Error
 	 */
-	private function ask_gemini( string $api_key, array $contents ) {
-		$ai_response = $this->request_gemini( $api_key, $contents );
+	private function ask_ai( string $provider, string $api_key, array $contents ) {
+		$ai_response = ( 'openai' === $provider )
+			? $this->request_openai( $api_key, $contents )
+			: $this->request_gemini( $api_key, $contents );
+
 		if ( is_wp_error( $ai_response ) ) {
-			AIPDF_Logger::get_instance()->error( 'Gemini API: ' . $ai_response->get_error_message() );
 			return $ai_response;
 		}
 
-		$template = $this->parse_and_validate( $ai_response );
-		if ( is_wp_error( $template ) ) {
-			AIPDF_Logger::get_instance()->error(
-				sprintf(
-					'Invalid Gemini response (%s): %s Response start: %s',
-					$template->get_error_code(),
-					$template->get_error_message(),
-					mb_substr( $ai_response, 0, 500 )
-				)
-			);
-		}
-
-		return $template;
+		return $this->parse_and_validate( $ai_response );
 	}
 
 	/**
@@ -434,12 +436,6 @@ class AIPDF_Ajax_Handler {
 
 		$candidate = $data['candidates'][0] ?? array();
 
-		// Diagnose truncated/blocked responses right away, into the log.
-		$finish_reason = $candidate['finishReason'] ?? '';
-		if ( '' !== $finish_reason && 'STOP' !== $finish_reason ) {
-			AIPDF_Logger::get_instance()->warning( 'Gemini finishReason=' . $finish_reason . ' — the response may be incomplete.' );
-		}
-
 		// Concatenate all text parts (thinking models can split the response).
 		$text = '';
 		foreach ( (array) ( $candidate['content']['parts'] ?? array() ) as $part ) {
@@ -450,6 +446,76 @@ class AIPDF_Ajax_Handler {
 
 		if ( '' === $text ) {
 			return new WP_Error( 'aipdf_gemini_empty', __( 'Gemini returned an empty response.', 'ai-pdf-generator' ) );
+		}
+
+		return $text;
+	}
+
+	/**
+	 * Calls the OpenAI Chat Completions API.
+	 *
+	 * Note: unlike Gemini, this doesn't send reference images — OpenAI
+	 * support here is text-only, matching the current feature scope.
+	 *
+	 * @param array<int, array{role:string,text:string}> $contents Conversation turns.
+	 * @return string|WP_Error Raw text of the model's response.
+	 */
+	private function request_openai( string $api_key, array $contents ) {
+		$messages = array(
+			array(
+				'role'    => 'system',
+				'content' => $this->get_system_prompt(),
+			),
+		);
+
+		foreach ( $contents as $turn ) {
+			$messages[] = array(
+				'role'    => ( 'model' === ( $turn['role'] ?? 'user' ) ) ? 'assistant' : 'user',
+				'content' => (string) ( $turn['text'] ?? '' ),
+			);
+		}
+
+		$response = wp_remote_post(
+			'https://api.openai.com/v1/chat/completions',
+			array(
+				'timeout' => 45,
+				'headers' => array(
+					'Authorization' => 'Bearer ' . $api_key,
+					'Content-Type'  => 'application/json',
+				),
+				'body'    => wp_json_encode(
+					array(
+						'model'       => 'gpt-3.5-turbo',
+						'messages'    => $messages,
+						'temperature' => 0.7,
+					)
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( 200 !== $code ) {
+			$api_message = $data['error']['message'] ?? __( 'Unknown API error.', 'ai-pdf-generator' );
+			return new WP_Error(
+				'aipdf_openai_http',
+				sprintf(
+					/* translators: 1: HTTP code, 2: API error message. */
+					__( 'OpenAI API returned error %1$d: %2$s', 'ai-pdf-generator' ),
+					$code,
+					$api_message
+				)
+			);
+		}
+
+		$text = (string) ( $data['choices'][0]['message']['content'] ?? '' );
+		if ( '' === $text ) {
+			return new WP_Error( 'aipdf_openai_empty', __( 'OpenAI returned an empty response.', 'ai-pdf-generator' ) );
 		}
 
 		return $text;

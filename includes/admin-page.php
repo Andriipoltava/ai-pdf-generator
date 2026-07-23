@@ -29,7 +29,6 @@ class AIPDF_Admin_Page {
 
 		// Test PDF generation from a saved template + a link in the CPT list.
 		add_action( 'admin_post_aipdf_test_pdf', array( $this, 'handle_test_pdf' ) );
-		add_action( 'admin_post_aipdf_clear_log', array( $this, 'handle_clear_log' ) );
 		add_filter( 'post_row_actions', array( $this, 'add_test_pdf_row_action' ), 10, 2 );
 	}
 
@@ -165,6 +164,26 @@ class AIPDF_Admin_Page {
 
 		register_setting(
 			'aipdf_settings_group',
+			AIPDF_Plugin::OPTION_OPENAI_API_KEY,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( $this, 'sanitize_openai_api_key' ),
+				'default'           => '',
+			)
+		);
+
+		register_setting(
+			'aipdf_settings_group',
+			AIPDF_Plugin::OPTION_AI_PROVIDER,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( $this, 'sanitize_ai_provider' ),
+				'default'           => 'gemini',
+			)
+		);
+
+		register_setting(
+			'aipdf_settings_group',
 			AIPDF_Ajax_Handler::OPTION_MODEL,
 			array(
 				'type'              => 'string',
@@ -261,6 +280,28 @@ class AIPDF_Admin_Page {
 	}
 
 	/**
+	 * Same "don't wipe on empty submit" behavior as the Gemini API key.
+	 */
+	public function sanitize_openai_api_key( ?string $value ): string {
+		$value = trim( (string) $value );
+
+		if ( '' === $value ) {
+			return (string) get_option( AIPDF_Plugin::OPTION_OPENAI_API_KEY, '' );
+		}
+
+		return sanitize_text_field( $value );
+	}
+
+	/**
+	 * Restricts the AI provider to the two known values; anything else
+	 * falls back to Gemini.
+	 */
+	public function sanitize_ai_provider( $value ): string {
+		$value = (string) $value;
+		return in_array( $value, array( 'gemini', 'openai' ), true ) ? $value : 'gemini';
+	}
+
+	/**
 	 * JS is only enqueued on the plugin's own page.
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
@@ -310,7 +351,7 @@ class AIPDF_Admin_Page {
 	}
 
 	/**
-	 * Page markup: Instructions, Settings, Event Log. The generator itself
+	 * Page markup: Instructions, Settings, Branding. The generator itself
 	 * lives on its own submenu page (render_generator_page).
 	 */
 	public function render_page(): void {
@@ -323,14 +364,10 @@ class AIPDF_Admin_Page {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'AI PDF Generator', 'ai-pdf-generator' ); ?></h1>
 
-			<?php if ( isset( $_GET['aipdf_log_cleared'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- informational notice only. ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Log cleared.', 'ai-pdf-generator' ); ?></p></div>
-			<?php endif; ?>
-
 			<h2 class="nav-tab-wrapper" id="aipdf-tabs">
 				<a href="#instructions" class="nav-tab nav-tab-active" data-tab="instructions"><?php esc_html_e( 'Instructions', 'ai-pdf-generator' ); ?></a>
 				<a href="#settings" class="nav-tab" data-tab="settings"><?php esc_html_e( 'Settings', 'ai-pdf-generator' ); ?></a>
-				<a href="#logs" class="nav-tab" data-tab="logs"><?php esc_html_e( 'Event Log', 'ai-pdf-generator' ); ?></a>
+				<a href="#branding" class="nav-tab aipdf-tab-link" data-tab="branding"><?php esc_html_e( 'Branding', 'ai-pdf-generator' ); ?></a>
 			</h2>
 
 			<!-- ============ Tab: Instructions (onboarding) ============ -->
@@ -358,7 +395,7 @@ class AIPDF_Admin_Page {
 							<?php
 							printf(
 								/* translators: %s: link to the Settings tab. */
-								esc_html__( 'Go to the %s tab and paste your own Gemini API key (get one for free from Google AI Studio).', 'ai-pdf-generator' ),
+								esc_html__( 'Go to the %s tab, choose an AI provider (Gemini or OpenAI), and paste your own API key.', 'ai-pdf-generator' ),
 								'<a href="#settings" class="aipdf-onboard-link">' . esc_html__( 'Settings', 'ai-pdf-generator' ) . '</a>'
 							);
 							?>
@@ -403,8 +440,23 @@ class AIPDF_Admin_Page {
 			<div id="aipdf-tab-settings" class="aipdf-tab" style="display:none;padding-top:16px;">
 				<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
 					<?php settings_fields( 'aipdf_settings_group' ); ?>
+					<?php $ai_provider = (string) get_option( AIPDF_Plugin::OPTION_AI_PROVIDER, 'gemini' ); ?>
 					<table class="form-table" role="presentation">
 						<tr>
+							<th scope="row">
+								<label for="aipdf_ai_provider"><?php esc_html_e( 'AI Provider', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<select id="aipdf_ai_provider" name="<?php echo esc_attr( AIPDF_Plugin::OPTION_AI_PROVIDER ); ?>">
+									<option value="gemini" <?php selected( $ai_provider, 'gemini' ); ?>><?php esc_html_e( 'Google Gemini', 'ai-pdf-generator' ); ?></option>
+									<option value="openai" <?php selected( $ai_provider, 'openai' ); ?>><?php esc_html_e( 'OpenAI / ChatGPT', 'ai-pdf-generator' ); ?></option>
+								</select>
+								<p class="description">
+									<?php esc_html_e( 'Which AI service generates your PDF templates. Only the matching API key below is used.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+						<tr id="aipdf-row-gemini-key">
 							<th scope="row">
 								<label for="aipdf-api-key"><?php esc_html_e( 'Gemini API Key', 'ai-pdf-generator' ); ?></label>
 							</th>
@@ -420,6 +472,26 @@ class AIPDF_Admin_Page {
 								/>
 								<p class="description">
 									<?php esc_html_e( 'The key is stored in the site\'s options and never echoed back into HTML. A safer option: add define( \'AIPDF_GEMINI_API_KEY\', \'…\' ) to wp-config.php — the constant takes priority.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
+						<tr id="aipdf-row-openai-key">
+							<th scope="row">
+								<label for="aipdf-openai-api-key"><?php esc_html_e( 'OpenAI API Key', 'ai-pdf-generator' ); ?></label>
+							</th>
+							<td>
+								<?php $openai_key = (string) get_option( AIPDF_Plugin::OPTION_OPENAI_API_KEY, '' ); ?>
+								<input
+									type="password"
+									id="aipdf-openai-api-key"
+									name="<?php echo esc_attr( AIPDF_Plugin::OPTION_OPENAI_API_KEY ); ?>"
+									value=""
+									class="regular-text"
+									autocomplete="new-password"
+									placeholder="<?php echo $openai_key ? esc_attr__( '•••••••• (key saved — enter a new one to replace it)', 'ai-pdf-generator' ) : esc_attr__( 'Enter your OpenAI API key', 'ai-pdf-generator' ); ?>"
+								/>
+								<p class="description">
+									<?php esc_html_e( 'The key is stored in the site\'s options and never echoed back into HTML.', 'ai-pdf-generator' ); ?>
 								</p>
 							</td>
 						</tr>
@@ -462,8 +534,15 @@ class AIPDF_Admin_Page {
 							</td>
 						</tr>
 					</table>
+					<?php submit_button( __( 'Save Settings', 'ai-pdf-generator' ) ); ?>
+				</form>
+			</div>
 
-					<h2><?php esc_html_e( 'Branding', 'ai-pdf-generator' ); ?></h2>
+			<!-- ============ Tab: Branding ============ -->
+			<div id="aipdf-tab-branding" class="aipdf-tab" style="display:none;padding-top:16px;">
+				<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>">
+					<?php settings_fields( 'aipdf_settings_group' ); ?>
+					<input type="hidden" name="_wp_http_referer" value="<?php echo esc_attr( admin_url( 'admin.php?page=' . AIPDF_Plugin::ADMIN_SLUG ) . '#branding' ); ?>" />
 					<p class="description" style="margin-bottom:8px;">
 						<?php esc_html_e( 'These values are substituted into templates via the {{logo_url}}, {{brand_color}}, {{company_name}}, {{company_address}}, {{company_email}} placeholders — so the logo, colors, and details can be changed without editing HTML.', 'ai-pdf-generator' ); ?>
 					</p>
@@ -501,23 +580,7 @@ class AIPDF_Admin_Page {
 							<td><input type="email" id="aipdf-brand-email" name="<?php echo esc_attr( AIPDF_Brand::OPT_EMAIL ); ?>" value="<?php echo esc_attr( $brand_email ); ?>" class="regular-text" /></td>
 						</tr>
 					</table>
-					<?php submit_button( __( 'Save Settings', 'ai-pdf-generator' ) ); ?>
-				</form>
-			</div>
-
-			<!-- ============ Tab: Event Log ============ -->
-			<div id="aipdf-tab-logs" class="aipdf-tab" style="display:none;padding-top:16px;">
-				<?php $log_lines = AIPDF_Logger::get_instance()->tail( 50 ); ?>
-				<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;max-height:400px;overflow:auto;font-size:12px;line-height:1.6;border-radius:4px;"><?php
-					echo $log_lines
-						? esc_html( implode( "\n", $log_lines ) )
-						: esc_html__( 'Log is empty.', 'ai-pdf-generator' );
-				?></pre>
-				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
-					onsubmit="return confirm( '<?php echo esc_js( __( 'Clear the event log?', 'ai-pdf-generator' ) ); ?>' );">
-					<input type="hidden" name="action" value="aipdf_clear_log" />
-					<?php wp_nonce_field( 'aipdf_clear_log' ); ?>
-					<?php submit_button( __( 'Clear Log', 'ai-pdf-generator' ), 'delete', 'submit', false ); ?>
+					<?php submit_button( __( 'Save Branding', 'ai-pdf-generator' ) ); ?>
 				</form>
 			</div>
 		</div>
@@ -670,27 +733,4 @@ class AIPDF_Admin_Page {
 		<?php
 	}
 
-	/**
-	 * Clears the log file (admin-post + nonce).
-	 */
-	public function handle_clear_log(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Insufficient permissions.', 'ai-pdf-generator' ) );
-		}
-
-		check_admin_referer( 'aipdf_clear_log' );
-
-		AIPDF_Logger::get_instance()->clear();
-
-		wp_safe_redirect(
-			add_query_arg(
-				array(
-					'page'              => AIPDF_Plugin::ADMIN_SLUG,
-					'aipdf_log_cleared' => '1',
-				),
-				admin_url( 'admin.php' )
-			) . '#logs' // Return straight to the log tab.
-		);
-		exit;
-	}
 }

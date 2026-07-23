@@ -87,25 +87,8 @@ class AIPDF_PDF_Renderer {
 			// UTF-8 and Cyrillic work out of the box: mode 'utf-8' + DejaVu Sans.
 			$mpdf->WriteHTML( $html );
 
-			$pdf = $mpdf->Output( '', \Mpdf\Output\Destination::STRING_RETURN );
-
-			AIPDF_Logger::get_instance()->info(
-				sprintf(
-					'PDF generated: template #%d ("%s"), trigger %s, format %s, %d bytes.',
-					$post_id,
-					$post->post_title,
-					(string) get_post_meta( $post_id, '_aipdf_trigger_plugin', true ),
-					'' !== $paper_size ? $paper_size : 'A4',
-					strlen( $pdf )
-				)
-			);
-
-			return $pdf;
+			return $mpdf->Output( '', \Mpdf\Output\Destination::STRING_RETURN );
 		} catch ( \Mpdf\MpdfException $e ) {
-			AIPDF_Logger::get_instance()->error(
-				sprintf( 'mPDF render error (template #%d): %s', $post_id, $e->getMessage() )
-			);
-
 			return new WP_Error(
 				'aipdf_mpdf_error',
 				sprintf(

@@ -99,14 +99,6 @@ class AIPDF_Bulk_Actions {
 			++$scheduled;
 		}
 
-		AIPDF_Logger::get_instance()->info(
-			sprintf(
-				'Bulk generation: %d job(s) scheduled (orders: %s).',
-				$scheduled,
-				implode( ', ', array_map( 'absint', $order_ids ) )
-			)
-		);
-
 		return add_query_arg( 'aipdf_bulk_scheduled', $scheduled, $redirect_to );
 	}
 
@@ -122,7 +114,6 @@ class AIPDF_Bulk_Actions {
 
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) {
-			AIPDF_Logger::get_instance()->warning( "Bulk generation: order #{$order_id} not found." );
 			return;
 		}
 
@@ -146,8 +137,8 @@ class AIPDF_Bulk_Actions {
 					sprintf(
 						/* translators: %d: number of scheduled background jobs. */
 						_n(
-							'AI PDF Generator: %d document scheduled in the background. Check the "Event Log" in a few minutes.',
-							'AI PDF Generator: %d documents scheduled in the background. Check the "Event Log" in a few minutes.',
+							'AI PDF Generator: %d document scheduled in the background. Check back in a few minutes.',
+							'AI PDF Generator: %d documents scheduled in the background. Check back in a few minutes.',
 							$count,
 							'ai-pdf-generator'
 						),
