@@ -28,6 +28,34 @@
 			return map;
 		}
 
+		// Per-template branding override values — only when the "Use
+		// individual settings" checkbox is on, and only the ones actually
+		// filled in (matches the same "empty falls back to global" rule
+		// the PHP side uses in AIPDF_PDF_Renderer::override_placeholders()).
+		function overrideValues() {
+			var map = {};
+
+			if ( ! $( '#aipdf-override-toggle' ).is( ':checked' ) ) {
+				return map;
+			}
+
+			var pairs = {
+				logo_url:         $( '#aipdf-custom-logo-url' ).val(),
+				brand_color:      $( '#aipdf-custom-color' ).val(),
+				company_name:     $( '#aipdf-custom-company-name' ).val(),
+				company_address:  $( '#aipdf-custom-company-address' ).val(),
+				company_email:    $( '#aipdf-custom-company-email' ).val()
+			};
+
+			$.each( pairs, function ( key, value ) {
+				if ( value ) {
+					map[ key ] = value;
+				}
+			} );
+
+			return map;
+		}
+
 		// Drop <img> tags whose src is a single placeholder with no value
 		// (e.g. no logo uploaded yet) — an empty src otherwise shows a
 		// broken-image icon instead of just not being there.
@@ -61,9 +89,11 @@
 			} );
 		}
 
-		// {{key}} substitution: field values first, then sample data.
+		// {{key}} substitution: sample/global first, then this template's
+		// branding override (if enabled), then visual field values — same
+		// priority order as AIPDF_PDF_Renderer::render() on the server.
 		function fill( html ) {
-			var data = $.extend( {}, sample, fieldValues() );
+			var data = $.extend( {}, sample, overrideValues(), fieldValues() );
 			html = hideEmptyImages( html, data );
 			html = html.replace( /\{\{\s*([a-z0-9_]+)\s*\}\}/gi, function ( match, key ) {
 				var value = data[ key.toLowerCase() ];
@@ -111,14 +141,22 @@
 			// anything already typed in.
 			$toggle.on( 'change', function () {
 				$fields.css( 'opacity', this.checked ? '' : '.5' );
+				scheduleRender();
 			} );
 
 			// Color picker for the override color — a dedicated class, not
-			// .aipdf-field, so it doesn't get swept into fieldValues() /
-			// the live preview substitution (this isn't a {{field_key}}).
+			// .aipdf-field (fieldValues() has its own {{field_key}} meaning),
+			// but it still needs to trigger the live preview, via overrideValues().
 			if ( $.fn.wpColorPicker ) {
-				$( '.aipdf-override-color-field' ).wpColorPicker();
+				$( '.aipdf-override-color-field' ).wpColorPicker( {
+					change: scheduleRender,
+					clear:  scheduleRender
+				} );
 			}
+
+			// Company name/address/email: plain text inputs, live-update like everything else.
+			$( '#aipdf-custom-company-name, #aipdf-custom-company-address, #aipdf-custom-company-email' )
+				.on( 'input', scheduleRender );
 
 			// Logo media picker (same pattern as the global Branding logo picker).
 			var frame,
@@ -143,6 +181,7 @@
 					$logoUrl.val( att.url );
 					$logoPrev.attr( 'src', att.url ).show();
 					$logoRemove.show();
+					scheduleRender();
 				} );
 				frame.open();
 			} );
@@ -152,6 +191,7 @@
 				$logoUrl.val( '' );
 				$logoPrev.attr( 'src', '' ).hide();
 				$( this ).hide();
+				scheduleRender();
 			} );
 
 			// Paper size: a friendly select (A4/Letter/Legal/Custom) that
