@@ -23,6 +23,7 @@ if ( file_exists( AIPDF_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
 	require_once AIPDF_PLUGIN_DIR . 'vendor/autoload.php';
 }
 
+require_once AIPDF_PLUGIN_DIR . 'includes/logger.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/triggers.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/fields.php';
 require_once AIPDF_PLUGIN_DIR . 'includes/brand.php';
@@ -64,6 +65,12 @@ final class AIPDF_Plugin {
 	 * Option name that stores which AI provider generation uses ('gemini' | 'openai').
 	 */
 	public const OPTION_AI_PROVIDER = 'aipdf_ai_provider';
+
+	/**
+	 * Option name that toggles the Event Log on/off ('1' enabled, '' disabled).
+	 * Enabled by default — existing sites keep logging until turned off.
+	 */
+	public const OPTION_LOGGING_ENABLED = 'aipdf_logging_enabled';
 
 	/**
 	 * Admin settings page slug.

@@ -29,6 +29,7 @@ class AIPDF_Admin_Page {
 
 		// Test PDF generation from a saved template + a link in the CPT list.
 		add_action( 'admin_post_aipdf_test_pdf', array( $this, 'handle_test_pdf' ) );
+		add_action( 'admin_post_aipdf_clear_log', array( $this, 'handle_clear_log' ) );
 		add_filter( 'post_row_actions', array( $this, 'add_test_pdf_row_action' ), 10, 2 );
 	}
 
@@ -184,6 +185,16 @@ class AIPDF_Admin_Page {
 
 		register_setting(
 			'aipdf_settings_group',
+			AIPDF_Plugin::OPTION_LOGGING_ENABLED,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( $this, 'sanitize_logging_enabled' ),
+				'default'           => '1',
+			)
+		);
+
+		register_setting(
+			'aipdf_settings_group',
 			AIPDF_Ajax_Handler::OPTION_MODEL,
 			array(
 				'type'              => 'string',
@@ -302,6 +313,14 @@ class AIPDF_Admin_Page {
 	}
 
 	/**
+	 * Checkbox: '1' when checked, '' when the field wasn't submitted at all
+	 * (an unchecked checkbox sends nothing).
+	 */
+	public function sanitize_logging_enabled( $value ): string {
+		return '1' === (string) $value ? '1' : '';
+	}
+
+	/**
 	 * JS is only enqueued on the plugin's own page.
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
@@ -346,6 +365,8 @@ class AIPDF_Admin_Page {
 					'actionDl'     => __( 'download link', 'ai-pdf-generator' ),
 					'welcomeMsg'   => __( 'Describe the document you need, or start from a ready-made example below.', 'ai-pdf-generator' ),
 					'downloadPdf'  => __( 'Download PDF', 'ai-pdf-generator' ),
+					'openInEditor' => __( 'Open in Editor', 'ai-pdf-generator' ),
+					'templateSaved' => __( 'Template saved (#%d) — you can edit it like any other template.', 'ai-pdf-generator' ),
 				),
 			)
 		);
@@ -365,10 +386,15 @@ class AIPDF_Admin_Page {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'AI PDF Generator', 'ai-pdf-generator' ); ?></h1>
 
+			<?php if ( isset( $_GET['aipdf_log_cleared'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- informational notice only. ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Log cleared.', 'ai-pdf-generator' ); ?></p></div>
+			<?php endif; ?>
+
 			<h2 class="nav-tab-wrapper" id="aipdf-tabs">
 				<a href="#instructions" class="nav-tab nav-tab-active" data-tab="instructions"><?php esc_html_e( 'Instructions', 'ai-pdf-generator' ); ?></a>
 				<a href="#settings" class="nav-tab" data-tab="settings"><?php esc_html_e( 'Settings', 'ai-pdf-generator' ); ?></a>
 				<a href="#branding" class="nav-tab aipdf-tab-link" data-tab="branding"><?php esc_html_e( 'Branding', 'ai-pdf-generator' ); ?></a>
+				<a href="#logs" class="nav-tab" data-tab="logs"><?php esc_html_e( 'Event Log', 'ai-pdf-generator' ); ?></a>
 			</h2>
 
 			<!-- ============ Tab: Instructions (onboarding) ============ -->
@@ -534,6 +560,23 @@ class AIPDF_Admin_Page {
 								</p>
 							</td>
 						</tr>
+						<tr>
+							<th scope="row"><?php esc_html_e( 'Event Log', 'ai-pdf-generator' ); ?></th>
+							<td>
+								<label>
+									<input
+										type="checkbox"
+										name="<?php echo esc_attr( AIPDF_Plugin::OPTION_LOGGING_ENABLED ); ?>"
+										value="1"
+										<?php checked( '1', (string) get_option( AIPDF_Plugin::OPTION_LOGGING_ENABLED, '1' ) ); ?>
+									/>
+									<?php esc_html_e( 'Enable the Event Log', 'ai-pdf-generator' ); ?>
+								</label>
+								<p class="description">
+									<?php esc_html_e( 'Records generation, delivery, and error events to a local log file (viewable in the Event Log tab). Turning this off stops new entries; past entries are kept until cleared.', 'ai-pdf-generator' ); ?>
+								</p>
+							</td>
+						</tr>
 					</table>
 					<?php submit_button( __( 'Save Settings', 'ai-pdf-generator' ) ); ?>
 				</form>
@@ -584,6 +627,22 @@ class AIPDF_Admin_Page {
 					<?php submit_button( __( 'Save Branding', 'ai-pdf-generator' ) ); ?>
 				</form>
 			</div>
+
+			<!-- ============ Tab: Event Log ============ -->
+			<div id="aipdf-tab-logs" class="aipdf-tab" style="display:none;padding-top:16px;">
+				<?php $log_lines = AIPDF_Logger::get_instance()->tail( 50 ); ?>
+				<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;max-height:400px;overflow:auto;font-size:12px;line-height:1.6;border-radius:4px;"><?php
+					echo $log_lines
+						? esc_html( implode( "\n", $log_lines ) )
+						: esc_html__( 'Log is empty.', 'ai-pdf-generator' );
+				?></pre>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
+					onsubmit="return confirm( '<?php echo esc_js( __( 'Clear the event log?', 'ai-pdf-generator' ) ); ?>' );">
+					<input type="hidden" name="action" value="aipdf_clear_log" />
+					<?php wp_nonce_field( 'aipdf_clear_log' ); ?>
+					<?php submit_button( __( 'Clear Log', 'ai-pdf-generator' ), 'delete', 'submit', false ); ?>
+				</form>
+			</div>
 		</div>
 		<?php
 	}
@@ -627,7 +686,7 @@ class AIPDF_Admin_Page {
 			<div class="aipdf-static-templates" style="margin-top:16px;padding:16px 20px;background:#fff;border:1px solid #ccd0d4;border-radius:6px;max-width:760px;">
 				<h2 style="margin-top:0;"><?php esc_html_e( 'Ready-made Templates (Works without API Keys)', 'ai-pdf-generator' ); ?></h2>
 				<p class="description" style="margin-bottom:10px;">
-					<?php esc_html_e( 'These are built-in layouts rendered directly to PDF — no AI, no API key required. Your branding (logo, color, company details) is applied automatically.', 'ai-pdf-generator' ); ?>
+					<?php esc_html_e( 'These are built-in layouts rendered directly to PDF — no AI, no API key required. Your branding (logo, color, company details) is applied automatically, and the result is saved as a normal template you can open and edit afterwards.', 'ai-pdf-generator' ); ?>
 				</p>
 				<p style="margin:0 0 10px;display:flex;gap:8px;flex-wrap:wrap;">
 					<button type="button" class="button button-hero aipdf-static-template-btn" data-template="invoice">🧾 <?php esc_html_e( 'Generate Invoice', 'ai-pdf-generator' ); ?></button>
@@ -725,4 +784,27 @@ class AIPDF_Admin_Page {
 		<?php
 	}
 
+	/**
+	 * Clears the log file (admin-post + nonce).
+	 */
+	public function handle_clear_log(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Insufficient permissions.', 'ai-pdf-generator' ) );
+		}
+
+		check_admin_referer( 'aipdf_clear_log' );
+
+		AIPDF_Logger::get_instance()->clear();
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'              => AIPDF_Plugin::ADMIN_SLUG,
+					'aipdf_log_cleared' => '1',
+				),
+				admin_url( 'admin.php' )
+			) . '#logs' // Return straight to the log tab.
+		);
+		exit;
+	}
 }

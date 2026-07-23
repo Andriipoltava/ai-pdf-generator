@@ -59,6 +59,9 @@
 			if ( ! initial && search.indexOf( 'settings-updated=true' ) !== -1 ) {
 				initial = 'settings';
 			}
+			if ( ! initial && search.indexOf( 'aipdf_log_cleared=1' ) !== -1 ) {
+				initial = 'logs';
+			}
 
 			activateTab( initial || 'instructions' );
 		}() );
@@ -300,17 +303,39 @@
 				} )
 					.done( function ( response ) {
 						if ( response && response.success && response.data && response.data.url ) {
-							$result
-								.empty()
-								.append(
+							var data = response.data;
+
+							$result.empty();
+
+							if ( data.post_id ) {
+								$result.append(
+									$( '<p/>', { style: 'margin:0 0 8px;' } ).text(
+										( i18n.templateSaved || 'Template saved (#%d) — you can edit it like any other template.' ).replace( '%d', data.post_id )
+									)
+								);
+							}
+
+							$result.append(
+								$( '<a/>', {
+									href:   data.url,
+									target: '_blank',
+									class:  'button button-primary',
+									text:   i18n.downloadPdf || 'Download PDF'
+								} )
+							);
+
+							if ( data.edit_link ) {
+								$result.append(
 									$( '<a/>', {
-										href:   response.data.url,
-										target: '_blank',
-										class:  'button button-primary',
-										text:   i18n.downloadPdf || 'Download PDF'
+										href:  data.edit_link,
+										class: 'button',
+										style: 'margin-left:6px;',
+										text:  i18n.openInEditor || 'Open in Editor'
 									} )
-								)
-								.show();
+								);
+							}
+
+							$result.show();
 							return;
 						}
 						$result

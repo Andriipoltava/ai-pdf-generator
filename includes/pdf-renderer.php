@@ -73,7 +73,27 @@ class AIPDF_PDF_Renderer {
 		$html       = $this->fill_placeholders( $post->post_content, $data );
 		$paper_size = (string) get_post_meta( $post_id, '_aipdf_paper_size', true );
 
-		return $this->render_html( $html, $post->post_title, $paper_size );
+		$pdf = $this->render_html( $html, $post->post_title, $paper_size );
+
+		if ( is_wp_error( $pdf ) ) {
+			AIPDF_Logger::get_instance()->error(
+				sprintf( 'mPDF render error (template #%d): %s', $post_id, $pdf->get_error_message() )
+			);
+			return $pdf;
+		}
+
+		AIPDF_Logger::get_instance()->info(
+			sprintf(
+				'PDF generated: template #%d ("%s"), trigger %s, format %s, %d bytes.',
+				$post_id,
+				$post->post_title,
+				(string) get_post_meta( $post_id, '_aipdf_trigger_plugin', true ),
+				'' !== $paper_size ? $paper_size : 'A4',
+				strlen( $pdf )
+			)
+		);
+
+		return $pdf;
 	}
 
 	/**
@@ -126,41 +146,6 @@ class AIPDF_PDF_Renderer {
 		// Unpredictable filename so the URL can't be guessed.
 		$filename = sanitize_file_name(
 			sprintf( 'pdf-%d-%s.pdf', $post_id, wp_generate_password( 16, false ) )
-		);
-		$path     = trailingslashit( $dir ) . $filename;
-
-		if ( false === file_put_contents( $path, $pdf ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions -- local write inside uploads.
-			return new WP_Error( 'aipdf_write_failed', __( 'Failed to write the PDF file.', 'ai-pdf-generator' ) );
-		}
-
-		$uploads = wp_upload_dir();
-
-		return array(
-			'path' => $path,
-			'url'  => trailingslashit( $uploads['baseurl'] ) . self::UPLOADS_SUBDIR . '/' . $filename,
-		);
-	}
-
-	/**
-	 * Renders already-substituted HTML straight to a file — for static,
-	 * no-AI templates that aren't tied to a CPT post.
-	 *
-	 * @return array{path:string,url:string}|WP_Error
-	 */
-	public function render_html_to_file( string $html, string $title, string $paper_size, string $filename_prefix = 'static' ) {
-		$pdf = $this->render_html( $html, $title, $paper_size );
-		if ( is_wp_error( $pdf ) ) {
-			return $pdf;
-		}
-
-		$dir = $this->get_storage_dir();
-		if ( is_wp_error( $dir ) ) {
-			return $dir;
-		}
-
-		// Unpredictable filename so the URL can't be guessed.
-		$filename = sanitize_file_name(
-			sprintf( '%s-%s.pdf', $filename_prefix, wp_generate_password( 16, false ) )
 		);
 		$path     = trailingslashit( $dir ) . $filename;
 

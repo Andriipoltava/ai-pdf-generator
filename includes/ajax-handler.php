@@ -32,9 +32,12 @@ class AIPDF_Ajax_Handler {
 
 	/**
 	 * Generates one of the built-in, no-AI static templates (Invoice,
-	 * Certificate) straight to a PDF file — no Gemini/OpenAI call, so this
-	 * works even before any API key has been configured. Branding (logo,
-	 * color, company details) is still applied via AIPDF_Brand.
+	 * Certificate) — no Gemini/OpenAI call, so this works even before any
+	 * API key has been configured. Saved as a normal CPT template (exactly
+	 * like an AI-generated one), so it shows up in the Templates list and
+	 * can be edited in the Template Editor afterwards; branding (logo,
+	 * color, company details) is applied via the same rendering path every
+	 * other template uses.
 	 */
 	public function handle_generate_static_template(): void {
 		check_ajax_referer( 'aipdf_generate', 'nonce' );
@@ -43,38 +46,57 @@ class AIPDF_Ajax_Handler {
 			wp_send_json_error( array( 'message' => __( 'Insufficient permissions.', 'ai-pdf-generator' ) ), 403 );
 		}
 
-		$template = isset( $_POST['template'] ) ? sanitize_key( wp_unslash( $_POST['template'] ) ) : '';
+		$template_key = isset( $_POST['template'] ) ? sanitize_key( wp_unslash( $_POST['template'] ) ) : '';
 
 		$templates = array(
-			'invoice'     => array( $this->static_invoice_html(), __( 'Invoice', 'ai-pdf-generator' ) ),
-			'certificate' => array( $this->static_certificate_html(), __( 'Certificate', 'ai-pdf-generator' ) ),
+			'invoice'     => array( $this->static_invoice_html(), __( 'Invoice (Ready-made Template)', 'ai-pdf-generator' ) ),
+			'certificate' => array( $this->static_certificate_html(), __( 'Certificate (Ready-made Template)', 'ai-pdf-generator' ) ),
 		);
 
-		if ( ! isset( $templates[ $template ] ) ) {
+		if ( ! isset( $templates[ $template_key ] ) ) {
 			wp_send_json_error( array( 'message' => __( 'Unknown template.', 'ai-pdf-generator' ) ), 400 );
 		}
 
-		list( $html, $title ) = $templates[ $template ];
+		list( $html, $title ) = $templates[ $template_key ];
 
-		// Same sanitization as an AI-generated template, then substitute
-		// branding — real values where set, sensible sample ones otherwise.
-		$html = AIPDF_PDF_Renderer::sanitize_html( $html );
-		$html = AIPDF_PDF_Renderer::substitute(
-			$html,
-			array_merge(
-				AIPDF_Brand::sample_placeholders(),
-				array( 'date' => wp_date( get_option( 'date_format' ) ) )
+		// Same validation/sanitization pipeline as an AI response or a
+		// manual save — the placeholders stay intact (not pre-substituted),
+		// so the saved template renders through the normal per-post pipeline
+		// (real branding, not just sample values) every time it's used.
+		$template = $this->normalize_template(
+			array(
+				'trigger_plugin'  => 'manual_generation',
+				'action_type'     => 'download_link',
+				'paper_size'      => 'A4',
+				'html_template'   => $html,
+				'editable_fields' => array(),
 			)
 		);
 
+		if ( is_wp_error( $template ) ) {
+			wp_send_json_error( array( 'message' => $template->get_error_message() ), 422 );
+		}
+
+		$post_id = $this->save_template( $title, $template );
+		if ( is_wp_error( $post_id ) ) {
+			wp_send_json_error( array( 'message' => $post_id->get_error_message() ), 500 );
+		}
+
 		$renderer = new AIPDF_PDF_Renderer();
-		$result   = $renderer->render_html_to_file( $html, $title, 'A4', 'static-' . $template );
+		$result   = $renderer->render_to_file( $post_id, array( 'date' => wp_date( get_option( 'date_format' ) ) ) );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ), 500 );
 		}
 
-		wp_send_json_success( array( 'url' => $result['url'] ) );
+		wp_send_json_success(
+			array(
+				'post_id'       => $post_id,
+				'edit_link'     => get_edit_post_link( $post_id, 'raw' ),
+				'url'           => $result['url'],
+				'pdf_available' => AIPDF_PDF_Renderer::is_available(),
+			)
+		);
 	}
 
 	/**
@@ -321,6 +343,7 @@ HTML;
 		// 5 MB limit — to avoid bloating the API request.
 		$size = filesize( $path );
 		if ( false === $size || $size > 5 * 1024 * 1024 ) {
+			AIPDF_Logger::get_instance()->warning( 'Reference image too large (>5MB) — skipped.' );
 			return null;
 		}
 
@@ -391,10 +414,24 @@ HTML;
 			: $this->request_gemini( $api_key, $contents );
 
 		if ( is_wp_error( $ai_response ) ) {
+			AIPDF_Logger::get_instance()->error( ucfirst( $provider ) . ' API: ' . $ai_response->get_error_message() );
 			return $ai_response;
 		}
 
-		return $this->parse_and_validate( $ai_response );
+		$template = $this->parse_and_validate( $ai_response );
+		if ( is_wp_error( $template ) ) {
+			AIPDF_Logger::get_instance()->error(
+				sprintf(
+					'Invalid %s response (%s): %s Response start: %s',
+					ucfirst( $provider ),
+					$template->get_error_code(),
+					$template->get_error_message(),
+					mb_substr( $ai_response, 0, 500 )
+				)
+			);
+		}
+
+		return $template;
 	}
 
 	/**
@@ -566,6 +603,12 @@ HTML;
 		}
 
 		$candidate = $data['candidates'][0] ?? array();
+
+		// Diagnose truncated/blocked responses right away, into the log.
+		$finish_reason = $candidate['finishReason'] ?? '';
+		if ( '' !== $finish_reason && 'STOP' !== $finish_reason ) {
+			AIPDF_Logger::get_instance()->warning( 'Gemini finishReason=' . $finish_reason . ' — the response may be incomplete.' );
+		}
 
 		// Concatenate all text parts (thinking models can split the response).
 		$text = '';
