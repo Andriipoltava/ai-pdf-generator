@@ -123,9 +123,9 @@ class AIPDF_Ajax_Handler {
 						{{company_email}}
 					</td>
 					<td width="50%" valign="top" align="right">
-						<strong>Invoice #:</strong> INV-2024-001<br />
+						<strong>Invoice #:</strong> [Invoice Number]<br />
 						<strong>Date:</strong> {{date}}<br />
-						<strong>Bill To:</strong> Client Name
+						<strong>Bill To:</strong> [Enter Client Name]
 					</td>
 				</tr>
 			</table>
@@ -135,16 +135,16 @@ class AIPDF_Ajax_Handler {
 					<td align="right"><strong>Amount</strong></td>
 				</tr>
 				<tr style="border-bottom: 1px solid #dddddd;">
-					<td>Development services</td>
-					<td align="right">\$500.00</td>
+					<td>[Service Description]</td>
+					<td align="right">[0.00]</td>
 				</tr>
 				<tr style="border-bottom: 1px solid #dddddd;">
-					<td>Consulting</td>
-					<td align="right">\$150.00</td>
+					<td>[Service Description]</td>
+					<td align="right">[0.00]</td>
 				</tr>
 				<tr>
 					<td align="right"><strong>Total</strong></td>
-					<td align="right"><strong>\$650.00</strong></td>
+					<td align="right"><strong>[0.00]</strong></td>
 				</tr>
 			</table>
 		</td>
@@ -165,7 +165,7 @@ HTML;
 			<span style="font-size: 36px; letter-spacing: 4px; color: {{brand_color}}; font-weight: bold;">CERTIFICATE</span><br />
 			<span style="font-size: 14px; color: #666666;">OF ACHIEVEMENT</span><br /><br /><br />
 			<span style="font-size: 14px; color: #666666;">This certificate is proudly presented to</span><br />
-			<span style="font-size: 30px; font-weight: bold; border-bottom: 2px solid {{brand_color}}; padding: 0 40px 6px;">Ivan Ivanov</span><br /><br />
+			<span style="font-size: 30px; font-weight: bold; border-bottom: 2px solid {{brand_color}}; padding: 0 40px 6px;">[Enter Student Name]</span><br /><br />
 			<span style="font-size: 14px; color: #666666;">for successfully completing the course</span><br /><br /><br /><br />
 			<table width="100%" cellpadding="0" cellspacing="0">
 				<tr>

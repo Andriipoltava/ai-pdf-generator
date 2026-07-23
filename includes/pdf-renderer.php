@@ -222,8 +222,30 @@ class AIPDF_PDF_Renderer {
 	 * allows: tables, inline style, <img>, etc. — still no <script>, no
 	 * event handlers) and additionally allows <barcode code type size>,
 	 * so QR codes generated via the native mPDF tag survive sanitization.
+	 *
+	 * `{{key}}` placeholders inside `style="..."` need special handling:
+	 * WordPress's CSS sanitizer (safecss_filter_attr, used internally by
+	 * wp_kses for the style attribute) rejects any declaration whose value
+	 * doesn't look like real CSS and silently drops it — so
+	 * `background-color: {{brand_color}}` or `border: 1px solid
+	 * {{brand_color}}` would vanish entirely, before the placeholder ever
+	 * gets a chance to be substituted at render time. Swap placeholders for
+	 * an innocuous alphanumeric token before sanitizing (which passes the
+	 * CSS validator untouched), then restore them afterward.
 	 */
 	public static function sanitize_html( string $html ): string {
+		$placeholder_tokens = array();
+
+		$html = (string) preg_replace_callback(
+			'/\{\{\s*[a-z0-9_]+\s*\}\}/i',
+			static function ( array $m ) use ( &$placeholder_tokens ): string {
+				$token = 'AIPDFPLACEHOLDER' . count( $placeholder_tokens ) . 'X';
+				$placeholder_tokens[ $token ] = $m[0];
+				return $token;
+			},
+			$html
+		);
+
 		$allowed = wp_kses_allowed_html( 'post' );
 
 		$allowed['barcode'] = array(
@@ -240,7 +262,9 @@ class AIPDF_PDF_Renderer {
 			'quietzone'     => true,
 		);
 
-		return wp_kses( $html, $allowed );
+		$html = wp_kses( $html, $allowed );
+
+		return $placeholder_tokens ? strtr( $html, $placeholder_tokens ) : $html;
 	}
 
 	/**

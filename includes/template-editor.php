@@ -97,6 +97,14 @@ class AIPDF_Template_Editor {
 			'side',
 			'default'
 		);
+		add_meta_box(
+			'aipdf_placeholders',
+			__( 'Dynamic Fields (Cheat Sheet)', 'ai-pdf-generator' ),
+			array( $this, 'box_placeholders' ),
+			AIPDF_Plugin::CPT,
+			'side',
+			'low'
+		);
 	}
 
 	/**
@@ -237,6 +245,36 @@ class AIPDF_Template_Editor {
 			<label for="aipdf-paper"><strong><?php esc_html_e( 'Size (A4, Letter, 800x400…)', 'ai-pdf-generator' ); ?></strong></label><br />
 			<input type="text" id="aipdf-paper" name="aipdf_paper" value="<?php echo esc_attr( $paper ); ?>" style="width:100%;" />
 		</p>
+		<?php
+	}
+
+	/**
+	 * Meta box: a copy/paste cheat sheet of the always-available branding
+	 * tags — the ones every template can use regardless of its trigger,
+	 * since they come from Settings/Branding rather than event data.
+	 */
+	public function box_placeholders(): void {
+		$tags = array(
+			'{{company_name}}'    => __( 'Your company name (from Branding)', 'ai-pdf-generator' ),
+			'{{company_address}}' => __( 'Company address', 'ai-pdf-generator' ),
+			'{{company_email}}'   => __( 'Company email', 'ai-pdf-generator' ),
+			'{{logo_url}}'        => __( 'Company logo (image URL)', 'ai-pdf-generator' ),
+			'{{brand_color}}'     => __( 'Primary brand color', 'ai-pdf-generator' ),
+			'{{date}}'            => __( "Today's date", 'ai-pdf-generator' ),
+		);
+		?>
+		<p class="description" style="margin:0 0 10px;">
+			<?php esc_html_e( 'Copy these tags and paste them into the template text. They\'re automatically replaced with real data when the PDF is generated.', 'ai-pdf-generator' ); ?>
+		</p>
+		<ul style="margin:0;padding:0;list-style:none;">
+			<?php foreach ( $tags as $tag => $label ) : ?>
+				<li style="margin-bottom:8px;">
+					<code style="display:inline-block;padding:2px 6px;background:#f0f0f1;border-radius:3px;font-size:12px;"><?php echo esc_html( $tag ); ?></code>
+					<br />
+					<span style="color:#646970;font-size:12px;"><?php echo esc_html( $label ); ?></span>
+				</li>
+			<?php endforeach; ?>
+		</ul>
 		<?php
 	}
 
