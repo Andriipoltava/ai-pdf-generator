@@ -113,8 +113,7 @@ class AIPDF_Bulk_Actions {
 	/**
 	 * ONE Action Scheduler background job: generates a PDF for a single
 	 * order via the exact same code path as the live "payment complete"
-	 * event — including the Conditional Logic check and delivery
-	 * (email / download link).
+	 * event — including delivery (email / download link).
 	 */
 	public function process_order( int $order_id ): void {
 		if ( ! function_exists( 'wc_get_order' ) ) {

@@ -96,22 +96,5 @@
 		$( '#aipdf-preview-refresh' ).on( 'click', render );
 
 		render();
-
-		// ---------- Generation conditions (Conditional Logic): repeater ----------
-		var $condRows = $( '#aipdf-cond-rows' ),
-			$template = $( '#aipdf-cond-row-template' );
-
-		if ( $condRows.length && $template.length ) {
-			$( '#aipdf-cond-add' ).on( 'click', function () {
-				var index = $condRows.children( '.aipdf-cond-row' ).length,
-					html  = $template.html().replace( /__INDEX__/g, index );
-
-				$condRows.append( html );
-			} );
-
-			$condRows.on( 'click', '.aipdf-cond-remove', function () {
-				$( this ).closest( '.aipdf-cond-row' ).remove();
-			} );
-		}
 	} );
 }( jQuery ) );

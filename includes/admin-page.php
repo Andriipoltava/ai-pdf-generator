@@ -599,6 +599,33 @@ class AIPDF_Admin_Page {
 						<span id="aipdf-ref-hint" class="description" style="display:none;margin-left:6px;font-size:11px;"><?php esc_html_e( 'will be attached to the next message', 'ai-pdf-generator' ); ?></span>
 					</p>
 
+					<!-- Quick-start templates -->
+					<style>
+						.aipdf-template-btn { transition: background-color .15s ease, border-color .15s ease; }
+						.aipdf-template-btn.aipdf-template-flash { background-color: #d4edda !important; border-color: #34a853 !important; }
+						#aipdf-chat-input.aipdf-template-flash { background-color: #d4edda; transition: background-color .15s ease; }
+					</style>
+					<p style="margin:0 0 6px;color:#646970;font-size:12px;">
+						<?php esc_html_e( "Not sure where to start? Choose a ready-made template:", 'ai-pdf-generator' ); ?>
+					</p>
+					<p style="margin:0 0 10px;display:flex;gap:6px;flex-wrap:wrap;">
+						<button
+							type="button"
+							class="button aipdf-template-btn"
+							data-prompt="<?php echo esc_attr__( "Generate a professional invoice for development services. Client: [Client Name]. Amount: [Enter amount]. Format: strict business style, with a services table and a total.", 'ai-pdf-generator' ); ?>"
+						>📄 <?php esc_html_e( 'Invoice', 'ai-pdf-generator' ); ?></button>
+						<button
+							type="button"
+							class="button aipdf-template-btn"
+							data-prompt="<?php echo esc_attr__( "Create a beautiful certificate of course completion. Student: [Student Name]. Date: [Today's date]. Add a congratulatory message and a place for the instructor's signature.", 'ai-pdf-generator' ); ?>"
+						>🎓 <?php esc_html_e( 'Certificate', 'ai-pdf-generator' ); ?></button>
+						<button
+							type="button"
+							class="button aipdf-template-btn"
+							data-prompt="<?php echo esc_attr__( 'Create a professional PDF report based on the following text: [Paste your text here]. Highlight the key points as a bulleted list and add a brief conclusion.', 'ai-pdf-generator' ); ?>"
+						>📝 <?php esc_html_e( 'Short Report', 'ai-pdf-generator' ); ?></button>
+					</p>
+
 					<!-- Input field + send -->
 					<div style="display:flex;gap:8px;align-items:flex-end;">
 						<textarea id="aipdf-chat-input" rows="2" class="large-text" style="flex:1;" placeholder="<?php esc_attr_e( 'Describe the document, or what to change…', 'ai-pdf-generator' ); ?>"></textarea>

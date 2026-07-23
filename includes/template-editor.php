@@ -97,14 +97,6 @@ class AIPDF_Template_Editor {
 			'side',
 			'default'
 		);
-		add_meta_box(
-			'aipdf_conditions',
-			__( 'Generation Conditions (Conditional Logic)', 'ai-pdf-generator' ),
-			array( $this, 'box_conditions' ),
-			AIPDF_Plugin::CPT,
-			'side',
-			'default'
-		);
 	}
 
 	/**
@@ -249,67 +241,6 @@ class AIPDF_Template_Editor {
 	}
 
 	/**
-	 * Meta box: generation conditions (Conditional Logic) — a "field /
-	 * operator / value" repeater. All rows are combined with AND; with no
-	 * rows the trigger always fires, as before.
-	 */
-	public function box_conditions( WP_Post $post ): void {
-		$conditions = AIPDF_Conditions::get( $post->ID );
-		?>
-		<p class="description" style="margin:0 0 8px;">
-			<?php esc_html_e( 'Generate the PDF only if ALL conditions below are met. "Field" is a trigger data key (e.g. order_total, product_category, client_name). With no conditions, it always fires.', 'ai-pdf-generator' ); ?>
-		</p>
-		<div id="aipdf-cond-rows">
-			<?php foreach ( $conditions as $i => $cond ) : ?>
-				<?php $this->render_condition_row( $i, $cond ); ?>
-			<?php endforeach; ?>
-		</div>
-		<p>
-			<button type="button" class="button button-small" id="aipdf-cond-add"><?php esc_html_e( '+ Add Condition', 'ai-pdf-generator' ); ?></button>
-		</p>
-
-		<!-- Row template for JS (cloned on "+ Add Condition"). -->
-		<script type="text/template" id="aipdf-cond-row-template">
-			<?php $this->render_condition_row( '__INDEX__', array( 'field' => '', 'operator' => '=', 'value' => '' ) ); ?>
-		</script>
-		<?php
-	}
-
-	/**
-	 * A single row of the conditions repeater. $index can be a number (a
-	 * real row) or the "__INDEX__" placeholder string (the JS clone template).
-	 *
-	 * @param int|string                                     $index
-	 * @param array{field:string,operator:string,value:string} $cond
-	 */
-	private function render_condition_row( $index, array $cond ): void {
-		?>
-		<div class="aipdf-cond-row" style="display:flex;gap:4px;margin-bottom:6px;align-items:center;">
-			<input
-				type="text"
-				name="aipdf_cond_field[<?php echo esc_attr( $index ); ?>]"
-				value="<?php echo esc_attr( $cond['field'] ); ?>"
-				placeholder="<?php esc_attr_e( 'order_total', 'ai-pdf-generator' ); ?>"
-				style="width:38%;"
-			/>
-			<select name="aipdf_cond_operator[<?php echo esc_attr( $index ); ?>]" style="width:22%;">
-				<?php foreach ( AIPDF_Conditions::OPERATORS as $op ) : ?>
-					<option value="<?php echo esc_attr( $op ); ?>" <?php selected( $cond['operator'], $op ); ?>><?php echo esc_html( $op ); ?></option>
-				<?php endforeach; ?>
-			</select>
-			<input
-				type="text"
-				name="aipdf_cond_value[<?php echo esc_attr( $index ); ?>]"
-				value="<?php echo esc_attr( $cond['value'] ); ?>"
-				placeholder="<?php esc_attr_e( 'value', 'ai-pdf-generator' ); ?>"
-				style="width:28%;"
-			/>
-			<button type="button" class="button-link aipdf-cond-remove" title="<?php esc_attr_e( 'Remove condition', 'ai-pdf-generator' ); ?>" style="color:#b32d2e;">✕</button>
-		</div>
-		<?php
-	}
-
-	/**
 	 * Save: writes the HTML to post_content and updates the meta.
 	 */
 	public function save( int $post_id, WP_Post $post ): void {
@@ -372,24 +303,6 @@ class AIPDF_Template_Editor {
 			if ( preg_match( '/^[A-Za-z0-9x\- ]{1,20}$/', $paper ) ) {
 				update_post_meta( $post_id, '_aipdf_paper_size', $paper );
 			}
-		}
-
-		// Generation conditions (Conditional Logic): three parallel repeater arrays.
-		if ( isset( $_POST['aipdf_cond_field'] ) && is_array( $_POST['aipdf_cond_field'] ) ) {
-			$fields    = wp_unslash( $_POST['aipdf_cond_field'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized below via AIPDF_Conditions::normalize.
-			$operators = isset( $_POST['aipdf_cond_operator'] ) ? wp_unslash( $_POST['aipdf_cond_operator'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$values    = isset( $_POST['aipdf_cond_value'] ) ? wp_unslash( $_POST['aipdf_cond_value'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-
-			$conditions = array();
-			foreach ( $fields as $i => $field ) {
-				$conditions[] = array(
-					'field'    => $field,
-					'operator' => $operators[ $i ] ?? '=',
-					'value'    => $values[ $i ] ?? '',
-				);
-			}
-
-			AIPDF_Conditions::save( $post_id, $conditions );
 		}
 	}
 }

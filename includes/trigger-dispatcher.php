@@ -62,13 +62,6 @@ class AIPDF_Trigger_Dispatcher {
 			return; // No template generated for this trigger yet — bail out quietly.
 		}
 
-		if ( ! AIPDF_Conditions::matches( $template->ID, $data ) ) {
-			AIPDF_Logger::get_instance()->info(
-				sprintf( 'Trigger %s: generation conditions not met — PDF not created.', $trigger )
-			);
-			return; // Conditional Logic wasn't satisfied — don't waste a render/API call.
-		}
-
 		$result = $this->renderer->render_to_file( $template->ID, $data );
 		if ( is_wp_error( $result ) ) {
 			// Don't break someone else's process (payment/booking) — just log it.
@@ -150,34 +143,9 @@ class AIPDF_Trigger_Dispatcher {
 			'order_id'         => (string) $order->get_order_number(),
 			'order_total'      => $order->get_total() . ' ' . $order->get_currency(),
 			'date'             => wp_date( get_option( 'date_format' ) ),
-			// Not a template placeholder — used only to evaluate Conditional Logic.
-			'product_category' => self::wc_order_categories( $order ),
 			// Internal key (not a placeholder): delivery writes the URL to order meta.
 			'_wc_order_id'     => (string) $order->get_id(),
 		);
-	}
-
-	/**
-	 * Names of all product categories in the order (comma-separated) —
-	 * available as the "product_category" field in Conditional Logic.
-	 */
-	private static function wc_order_categories( $order ): string {
-		$names = array();
-
-		foreach ( $order->get_items() as $item ) {
-			$product = $item->get_product();
-			if ( ! $product ) {
-				continue;
-			}
-			$terms = get_the_terms( $product->get_id(), 'product_cat' );
-			if ( is_array( $terms ) ) {
-				foreach ( $terms as $term ) {
-					$names[ $term->name ] = true;
-				}
-			}
-		}
-
-		return implode( ', ', array_keys( $names ) );
 	}
 
 	/**

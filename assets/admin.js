@@ -255,6 +255,27 @@
 			}, 350, this );
 		} );
 
+		// ---------- Quick-start templates: fill the prompt in one click ----------
+		$( document ).on( 'click', '.aipdf-template-btn', function () {
+			var prompt = $( this ).data( 'prompt' ),
+				$btn   = $( this );
+
+			if ( ! prompt || ! $input.length ) {
+				return;
+			}
+
+			$input.val( prompt ).trigger( 'focus' );
+
+			// Brief highlight on both the clicked template and the field it
+			// just filled, so the fill is visually obvious.
+			$btn.addClass( 'aipdf-template-flash' );
+			$input.addClass( 'aipdf-template-flash' );
+			setTimeout( function () {
+				$btn.removeClass( 'aipdf-template-flash' );
+				$input.removeClass( 'aipdf-template-flash' );
+			}, 400 );
+		} );
+
 		// ---------- Live client-side preview: {{key}} substitution, no AJAX ----------
 
 		// Drop <img> tags whose src is a single placeholder with no value
