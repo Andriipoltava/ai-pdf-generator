@@ -43,8 +43,9 @@ class AIPDF_Template_Editor {
 			return;
 		}
 
-		// WP Color Picker for color fields.
+		// WP Color Picker for color fields, media library for the override logo picker.
 		wp_enqueue_style( 'wp-color-picker' );
+		wp_enqueue_media();
 
 		wp_enqueue_script(
 			'aipdf-editor',
@@ -65,6 +66,14 @@ class AIPDF_Template_Editor {
 	}
 
 	public function add_meta_boxes(): void {
+		add_meta_box(
+			'aipdf_override_branding',
+			__( 'Template Settings (Override Branding)', 'ai-pdf-generator' ),
+			array( $this, 'box_override_branding' ),
+			AIPDF_Plugin::CPT,
+			'normal',
+			'high'
+		);
 		add_meta_box(
 			'aipdf_fields',
 			__( 'Visual Editing', 'ai-pdf-generator' ),
@@ -105,6 +114,97 @@ class AIPDF_Template_Editor {
 			'side',
 			'low'
 		);
+	}
+
+	/**
+	 * Meta box: per-template overrides for branding (logo, color, company
+	 * details) and page format (size, orientation). Every field is blank
+	 * by default — an empty field means "use the global Branding setting",
+	 * matching AIPDF_PDF_Renderer::override_placeholders().
+	 */
+	public function box_override_branding( WP_Post $post ): void {
+		$enabled     = '1' === (string) get_post_meta( $post->ID, '_aipdf_override_branding', true );
+		$logo        = (string) get_post_meta( $post->ID, '_aipdf_custom_logo', true );
+		$color       = (string) get_post_meta( $post->ID, '_aipdf_custom_color', true );
+		$name        = (string) get_post_meta( $post->ID, '_aipdf_custom_company_name', true );
+		$address     = (string) get_post_meta( $post->ID, '_aipdf_custom_company_address', true );
+		$email       = (string) get_post_meta( $post->ID, '_aipdf_custom_company_email', true );
+		$paper       = (string) get_post_meta( $post->ID, '_aipdf_paper_size', true );
+		$orientation = (string) get_post_meta( $post->ID, '_aipdf_paper_orientation', true );
+		if ( '' === $orientation ) {
+			$orientation = 'portrait';
+		}
+
+		$known_sizes  = array( 'A4', 'Letter', 'Legal' );
+		$is_custom    = '' !== $paper && ! in_array( $paper, $known_sizes, true );
+		?>
+		<p>
+			<label>
+				<input type="checkbox" id="aipdf-override-toggle" name="aipdf_override_branding" value="1" <?php checked( $enabled ); ?> />
+				<strong><?php esc_html_e( 'Use individual settings for this template', 'ai-pdf-generator' ); ?></strong>
+			</label>
+			<p class="description" style="margin:4px 0 0;">
+				<?php esc_html_e( 'When off, this template uses your global Branding settings. When on, any field you fill in below overrides the global value — empty fields still fall back to global.', 'ai-pdf-generator' ); ?>
+			</p>
+		</p>
+
+		<div id="aipdf-override-fields" style="<?php echo $enabled ? '' : 'opacity:.5;'; ?>">
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Logo', 'ai-pdf-generator' ); ?></th>
+					<td>
+						<input type="hidden" id="aipdf-custom-logo-url" name="aipdf_custom_logo" value="<?php echo esc_attr( $logo ); ?>" />
+						<img id="aipdf-custom-logo-preview" src="<?php echo esc_url( $logo ); ?>" alt="" style="max-width:180px;max-height:60px;display:<?php echo $logo ? 'block' : 'none'; ?>;margin-bottom:8px;border:1px solid #ddd;padding:4px;background:#fff;" />
+						<button type="button" class="button" id="aipdf-custom-logo-upload"><?php esc_html_e( 'Choose Image', 'ai-pdf-generator' ); ?></button>
+						<button type="button" class="button" id="aipdf-custom-logo-remove" style="display:<?php echo $logo ? 'inline-block' : 'none'; ?>;"><?php esc_html_e( 'Remove', 'ai-pdf-generator' ); ?></button>
+						<p class="description"><?php esc_html_e( 'Leave empty to use the global logo.', 'ai-pdf-generator' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="aipdf-custom-color"><?php esc_html_e( 'Primary Color', 'ai-pdf-generator' ); ?></label></th>
+					<td>
+						<input type="text" id="aipdf-custom-color" name="aipdf_custom_color" value="<?php echo esc_attr( $color ); ?>" class="aipdf-override-color-field" placeholder="<?php esc_attr_e( 'e.g. #0073aa', 'ai-pdf-generator' ); ?>" />
+						<p class="description"><?php esc_html_e( 'Leave empty to use the global brand color.', 'ai-pdf-generator' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="aipdf-custom-company-name"><?php esc_html_e( 'Company Name', 'ai-pdf-generator' ); ?></label></th>
+					<td><input type="text" id="aipdf-custom-company-name" name="aipdf_custom_company_name" value="<?php echo esc_attr( $name ); ?>" class="regular-text" /></td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="aipdf-custom-company-address"><?php esc_html_e( 'Company Address', 'ai-pdf-generator' ); ?></label></th>
+					<td><input type="text" id="aipdf-custom-company-address" name="aipdf_custom_company_address" value="<?php echo esc_attr( $address ); ?>" class="regular-text" /></td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="aipdf-custom-company-email"><?php esc_html_e( 'Company Email', 'ai-pdf-generator' ); ?></label></th>
+					<td><input type="email" id="aipdf-custom-company-email" name="aipdf_custom_company_email" value="<?php echo esc_attr( $email ); ?>" class="regular-text" /></td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="aipdf-paper-size-select"><?php esc_html_e( 'Page Size', 'ai-pdf-generator' ); ?></label></th>
+					<td>
+						<input type="hidden" id="aipdf-paper" name="aipdf_paper" value="<?php echo esc_attr( $paper ); ?>" />
+						<select id="aipdf-paper-size-select">
+							<option value="A4" <?php selected( ! $is_custom && ( 'A4' === $paper || '' === $paper ), true ); ?>>A4</option>
+							<option value="Letter" <?php selected( 'Letter' === $paper ); ?>>Letter</option>
+							<option value="Legal" <?php selected( 'Legal' === $paper ); ?>>Legal</option>
+							<option value="custom" <?php selected( $is_custom, true ); ?>><?php esc_html_e( 'Custom (pixel size, e.g. 800x400)', 'ai-pdf-generator' ); ?></option>
+						</select>
+						<input type="text" id="aipdf-paper-custom" value="<?php echo $is_custom ? esc_attr( $paper ) : ''; ?>" placeholder="800x400" style="display:<?php echo $is_custom ? 'inline-block' : 'none'; ?>;margin-top:4px;width:100%;" />
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="aipdf-paper-orientation"><?php esc_html_e( 'Orientation', 'ai-pdf-generator' ); ?></label></th>
+					<td>
+						<select id="aipdf-paper-orientation" name="aipdf_paper_orientation">
+							<option value="portrait" <?php selected( 'portrait', $orientation ); ?>><?php esc_html_e( 'Portrait', 'ai-pdf-generator' ); ?></option>
+							<option value="landscape" <?php selected( 'landscape', $orientation ); ?>><?php esc_html_e( 'Landscape', 'ai-pdf-generator' ); ?></option>
+						</select>
+						<p class="description"><?php esc_html_e( 'Landscape flips a standard size (A4, Letter, Legal); for a custom pixel size, width/height are swapped.', 'ai-pdf-generator' ); ?></p>
+					</td>
+				</tr>
+			</table>
+		</div>
+		<?php
 	}
 
 	/**
@@ -208,7 +308,6 @@ class AIPDF_Template_Editor {
 	public function box_params( WP_Post $post ): void {
 		$trigger = (string) get_post_meta( $post->ID, '_aipdf_trigger_plugin', true );
 		$action  = (string) get_post_meta( $post->ID, '_aipdf_action_type', true );
-		$paper   = (string) get_post_meta( $post->ID, '_aipdf_paper_size', true );
 		?>
 		<p>
 			<label for="aipdf-trigger"><strong><?php esc_html_e( 'Trigger', 'ai-pdf-generator' ); ?></strong></label><br />
@@ -241,9 +340,8 @@ class AIPDF_Template_Editor {
 				<?php endforeach; ?>
 			</select>
 		</p>
-		<p>
-			<label for="aipdf-paper"><strong><?php esc_html_e( 'Size (A4, Letter, 800x400…)', 'ai-pdf-generator' ); ?></strong></label><br />
-			<input type="text" id="aipdf-paper" name="aipdf_paper" value="<?php echo esc_attr( $paper ); ?>" style="width:100%;" />
+		<p class="description">
+			<?php esc_html_e( 'Paper size and orientation are set in the "Template Settings (Override Branding)" box below.', 'ai-pdf-generator' ); ?>
 		</p>
 		<?php
 	}
@@ -341,6 +439,31 @@ class AIPDF_Template_Editor {
 			if ( preg_match( '/^[A-Za-z0-9x\- ]{1,20}$/', $paper ) ) {
 				update_post_meta( $post_id, '_aipdf_paper_size', $paper );
 			}
+		}
+		if ( isset( $_POST['aipdf_paper_orientation'] ) ) {
+			$orientation = sanitize_key( wp_unslash( $_POST['aipdf_paper_orientation'] ) );
+			update_post_meta( $post_id, '_aipdf_paper_orientation', 'landscape' === $orientation ? 'landscape' : 'portrait' );
+		}
+
+		// Per-template branding override. An unchecked checkbox sends
+		// nothing, so its absence from $_POST IS the "off" state.
+		update_post_meta( $post_id, '_aipdf_override_branding', isset( $_POST['aipdf_override_branding'] ) ? '1' : '' );
+
+		if ( isset( $_POST['aipdf_custom_logo'] ) ) {
+			update_post_meta( $post_id, '_aipdf_custom_logo', esc_url_raw( wp_unslash( $_POST['aipdf_custom_logo'] ) ) );
+		}
+		if ( isset( $_POST['aipdf_custom_color'] ) ) {
+			$color = sanitize_hex_color( wp_unslash( $_POST['aipdf_custom_color'] ) );
+			update_post_meta( $post_id, '_aipdf_custom_color', (string) $color );
+		}
+		if ( isset( $_POST['aipdf_custom_company_name'] ) ) {
+			update_post_meta( $post_id, '_aipdf_custom_company_name', sanitize_text_field( wp_unslash( $_POST['aipdf_custom_company_name'] ) ) );
+		}
+		if ( isset( $_POST['aipdf_custom_company_address'] ) ) {
+			update_post_meta( $post_id, '_aipdf_custom_company_address', sanitize_text_field( wp_unslash( $_POST['aipdf_custom_company_address'] ) ) );
+		}
+		if ( isset( $_POST['aipdf_custom_company_email'] ) ) {
+			update_post_meta( $post_id, '_aipdf_custom_company_email', sanitize_email( wp_unslash( $_POST['aipdf_custom_company_email'] ) ) );
 		}
 	}
 }

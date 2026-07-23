@@ -63,17 +63,20 @@ class AIPDF_PDF_Renderer {
 		}
 
 		// Priority order (later overrides earlier):
-		// brand -> visual field values -> concrete event data.
+		// brand -> this template's branding override (if enabled) -> visual
+		// field values -> concrete event data.
 		$data = array_merge(
 			AIPDF_Brand::placeholders(),
+			$this->override_placeholders( $post_id ),
 			AIPDF_Fields::values( AIPDF_Fields::get( $post_id ) ),
 			$data
 		);
 
-		$html       = $this->fill_placeholders( $post->post_content, $data );
-		$paper_size = (string) get_post_meta( $post_id, '_aipdf_paper_size', true );
+		$html        = $this->fill_placeholders( $post->post_content, $data );
+		$paper_size  = (string) get_post_meta( $post_id, '_aipdf_paper_size', true );
+		$orientation = (string) get_post_meta( $post_id, '_aipdf_paper_orientation', true );
 
-		$pdf = $this->render_html( $html, $post->post_title, $paper_size );
+		$pdf = $this->render_html( $html, $post->post_title, $paper_size, $orientation );
 
 		if ( is_wp_error( $pdf ) ) {
 			AIPDF_Logger::get_instance()->error(
@@ -97,10 +100,43 @@ class AIPDF_PDF_Renderer {
 	}
 
 	/**
+	 * Per-template branding overrides — only returned when this template's
+	 * "Use individual settings" checkbox is on, and only the placeholder
+	 * keys that actually have a non-empty override value (an empty field
+	 * means "fall back to the global Branding setting", which array_merge
+	 * in render() already gives us for free by simply not including the key).
+	 *
+	 * @return array<string, string>
+	 */
+	private function override_placeholders( int $post_id ): array {
+		if ( '1' !== (string) get_post_meta( $post_id, '_aipdf_override_branding', true ) ) {
+			return array();
+		}
+
+		$map = array(
+			'logo_url'        => '_aipdf_custom_logo',
+			'brand_color'     => '_aipdf_custom_color',
+			'company_name'    => '_aipdf_custom_company_name',
+			'company_address' => '_aipdf_custom_company_address',
+			'company_email'   => '_aipdf_custom_company_email',
+		);
+
+		$overrides = array();
+		foreach ( $map as $placeholder => $meta_key ) {
+			$value = (string) get_post_meta( $post_id, $meta_key, true );
+			if ( '' !== $value ) {
+				$overrides[ $placeholder ] = $value;
+			}
+		}
+
+		return $overrides;
+	}
+
+	/**
 	 * Renders already-substituted HTML into PDF bytes. Shared by render()
 	 * (AI-generated CPT templates) and static, no-AI templates.
 	 */
-	public function render_html( string $html, string $title, string $paper_size = 'A4' ) {
+	public function render_html( string $html, string $title, string $paper_size = 'A4', string $orientation = 'portrait' ) {
 		if ( ! self::is_available() ) {
 			return new WP_Error(
 				'aipdf_no_mpdf',
@@ -109,7 +145,7 @@ class AIPDF_PDF_Renderer {
 		}
 
 		try {
-			$mpdf = new \Mpdf\Mpdf( $this->build_mpdf_config( $paper_size ) );
+			$mpdf = new \Mpdf\Mpdf( $this->build_mpdf_config( $paper_size, $orientation ) );
 			$mpdf->SetTitle( $title );
 			// UTF-8 and Cyrillic work out of the box: mode 'utf-8' + DejaVu Sans.
 			$mpdf->WriteHTML( $html );
@@ -169,7 +205,7 @@ class AIPDF_PDF_Renderer {
 	 *
 	 * @return array<string, mixed>
 	 */
-	private function build_mpdf_config( string $paper_size ): array {
+	private function build_mpdf_config( string $paper_size, string $orientation = 'portrait' ): array {
 		$config = array(
 			'mode'    => 'utf-8',
 			'tempDir' => $this->get_temp_dir(),
@@ -181,16 +217,27 @@ class AIPDF_PDF_Renderer {
 			'margin_bottom' => 0,
 		);
 
+		$is_landscape = 'landscape' === $orientation;
+
 		if ( preg_match( '/^(\d{2,5})x(\d{2,5})$/i', trim( $paper_size ), $m ) ) {
-			$px_to_mm         = 25.4 / 96;
-			$config['format'] = array(
-				round( (int) $m[1] * $px_to_mm, 2 ),
-				round( (int) $m[2] * $px_to_mm, 2 ),
-			);
+			$px_to_mm = 25.4 / 96;
+			$width    = round( (int) $m[1] * $px_to_mm, 2 );
+			$height   = round( (int) $m[2] * $px_to_mm, 2 );
+
+			// Custom pixel sizes have no built-in landscape variant — swap
+			// width/height directly (only when the size isn't already wider
+			// than it is tall, so it doesn't flip twice on repeated saves).
+			$config['format'] = ( $is_landscape && $width < $height )
+				? array( $height, $width )
+				: array( $width, $height );
 		} else {
 			$known            = array( 'a3', 'a4', 'a5', 'letter', 'legal' );
 			$size             = strtolower( trim( $paper_size ) );
 			$config['format'] = in_array( $size, $known, true ) ? strtoupper( $size ) : 'A4';
+			if ( $is_landscape ) {
+				// mPDF's own landscape notation for named formats.
+				$config['format'] .= '-L';
+			}
 			// Keep normal document margins for standard paper formats.
 			$config['margin_left']   = 10;
 			$config['margin_right']  = 10;

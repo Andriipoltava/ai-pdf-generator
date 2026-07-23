@@ -96,5 +96,80 @@
 		$( '#aipdf-preview-refresh' ).on( 'click', render );
 
 		render();
+
+		// ---------- Override Branding meta box ----------
+		( function () {
+			var $toggle = $( '#aipdf-override-toggle' ),
+				$fields = $( '#aipdf-override-fields' );
+
+			if ( ! $toggle.length ) {
+				return;
+			}
+
+			// Dim (not disable) the override fields when the toggle is off —
+			// values are kept either way, so switching back on doesn't lose
+			// anything already typed in.
+			$toggle.on( 'change', function () {
+				$fields.css( 'opacity', this.checked ? '' : '.5' );
+			} );
+
+			// Color picker for the override color — a dedicated class, not
+			// .aipdf-field, so it doesn't get swept into fieldValues() /
+			// the live preview substitution (this isn't a {{field_key}}).
+			if ( $.fn.wpColorPicker ) {
+				$( '.aipdf-override-color-field' ).wpColorPicker();
+			}
+
+			// Logo media picker (same pattern as the global Branding logo picker).
+			var frame,
+				$logoUrl    = $( '#aipdf-custom-logo-url' ),
+				$logoPrev   = $( '#aipdf-custom-logo-preview' ),
+				$logoRemove = $( '#aipdf-custom-logo-remove' );
+
+			$( '#aipdf-custom-logo-upload' ).on( 'click', function ( e ) {
+				e.preventDefault();
+				if ( frame ) {
+					frame.open();
+					return;
+				}
+				frame = wp.media( {
+					title:   'Logo',
+					button:  { text: 'Use this image' },
+					library: { type: 'image' },
+					multiple: false
+				} );
+				frame.on( 'select', function () {
+					var att = frame.state().get( 'selection' ).first().toJSON();
+					$logoUrl.val( att.url );
+					$logoPrev.attr( 'src', att.url ).show();
+					$logoRemove.show();
+				} );
+				frame.open();
+			} );
+
+			$logoRemove.on( 'click', function ( e ) {
+				e.preventDefault();
+				$logoUrl.val( '' );
+				$logoPrev.attr( 'src', '' ).hide();
+				$( this ).hide();
+			} );
+
+			// Paper size: a friendly select (A4/Letter/Legal/Custom) that
+			// keeps the real #aipdf-paper hidden input as the single source
+			// of truth submitted on save.
+			var $paperHidden = $( '#aipdf-paper' ),
+				$paperSelect = $( '#aipdf-paper-size-select' ),
+				$paperCustom = $( '#aipdf-paper-custom' );
+
+			$paperSelect.on( 'change', function () {
+				var isCustom = 'custom' === $paperSelect.val();
+				$paperCustom.toggle( isCustom );
+				$paperHidden.val( isCustom ? $paperCustom.val() : $paperSelect.val() );
+			} );
+
+			$paperCustom.on( 'input', function () {
+				$paperHidden.val( $paperCustom.val() );
+			} );
+		}() );
 	} );
 }( jQuery ) );
